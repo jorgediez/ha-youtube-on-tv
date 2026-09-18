@@ -43,10 +43,13 @@ from .const import (
     DOMAIN,
     LOGGER,
     LOUNGE_DEVICE_NAME,
+    POSITION_OVERRUN,
     POSITION_TOLERANCE,
     RECONNECT_MAX_DELAY,
     RECONNECT_MIN_DELAY,
     SETTLE_DELAY,
+    STALE_CHECK_INTERVAL,
+    STALE_REPLY_TIMEOUT,
 )
 from .dial import async_get_app_state
 
@@ -148,9 +151,26 @@ class YouTubeOnTvCoordinator(DataUpdateCoordinator[TvState]):
         # Working state; published to self.data immediately or after settling.
         self._state = TvState()
         self._app_running: bool | None = None
+        # Last YouTube app state reported by DIAL; None if the TV didn't answer.
+        self.app_state: str | None = None
         self._unsub_settle: CALLBACK_TYPE | None = None
         self._task: asyncio.Task[None] | None = None
         self._titles: dict[str, tuple[str | None, str | None]] = {}
+        # When the TV last sent a playback event, and when it was last asked
+        # what's playing by the staleness check.
+        self._last_event_at: datetime | None = None
+        self._stale_asked_at: datetime | None = None
+        self._unsub_stale_reply: CALLBACK_TYPE | None = None
+
+    @property
+    def has_app_state(self) -> bool:
+        """Return True if the TV's DIAL endpoint is known and polled."""
+        return self._app_url is not None
+
+    @property
+    def working_state(self) -> TvState:
+        """Return the latest state, including changes not yet published."""
+        return self._state
 
     @property
     def host(self) -> str | None:
@@ -177,6 +197,11 @@ class YouTubeOnTvCoordinator(DataUpdateCoordinator[TvState]):
         self._task = entry.async_create_background_task(
             self.hass, self._async_run(), f"{DOMAIN} lounge {entry.entry_id}"
         )
+        entry.async_on_unload(
+            async_track_time_interval(
+                self.hass, self._async_check_stale, STALE_CHECK_INTERVAL
+            )
+        )
         if self._app_url:
             entry.async_on_unload(
                 async_track_time_interval(
@@ -189,6 +214,9 @@ class YouTubeOnTvCoordinator(DataUpdateCoordinator[TvState]):
         """Disconnect from the screen."""
         await super().async_shutdown()
         self._cancel_settle()
+        if self._unsub_stale_reply is not None:
+            self._unsub_stale_reply()
+            self._unsub_stale_reply = None
         if self._task is not None:
             self._task.cancel()
             await asyncio.gather(self._task, return_exceptions=True)
@@ -284,6 +312,9 @@ class YouTubeOnTvCoordinator(DataUpdateCoordinator[TvState]):
         """Poll DIAL to detect the YouTube app closing or the TV turning off."""
         assert self._app_url is not None
         app_state = await async_get_app_state(self.hass, self._app_url)
+        if app_state != self.app_state:
+            self.app_state = app_state
+            self.async_update_listeners()
         running = app_state == "running"
         if running == self._app_running:
             return
@@ -324,6 +355,7 @@ class YouTubeOnTvCoordinator(DataUpdateCoordinator[TvState]):
     @callback
     def handle_now_playing(self, event: NowPlayingEvent) -> None:
         """Handle a now playing event."""
+        self._last_event_at = dt_util.utcnow()
         if not event.video_id:
             self._update(self._idle_state(), immediate=True)
             return
@@ -352,6 +384,7 @@ class YouTubeOnTvCoordinator(DataUpdateCoordinator[TvState]):
         self, state: State, current_time: float | None, duration: float | None
     ) -> None:
         """Handle a playback state change."""
+        self._last_event_at = dt_util.utcnow()
         current = self._state
         if state is State.Advertisement:
             # Position and duration refer to the ad, not the video.
@@ -396,6 +429,7 @@ class YouTubeOnTvCoordinator(DataUpdateCoordinator[TvState]):
     @callback
     def handle_ad_state(self, ad_state: State, skip_enabled: bool) -> None:
         """Handle an ad state change."""
+        self._last_event_at = dt_util.utcnow()
         if ad_state is State.Playing:
             new = replace(self._state, ad_playing=True, ad_skippable=skip_enabled)
         else:
@@ -407,6 +441,51 @@ class YouTubeOnTvCoordinator(DataUpdateCoordinator[TvState]):
         """Handle the TV ending the session (e.g. YouTube sent to background)."""
         LOGGER.debug("%s ended the lounge session", self.config_entry.title)
         self._update(TvState(), immediate=True)
+
+    async def _async_check_stale(self, _now: datetime | None = None) -> None:
+        """Detect a player that stopped without sending an event.
+
+        When YouTube drops to its profile picker or home screen mid-video, the
+        TV goes silent, and the last "playing" state would otherwise stay
+        forever. A TV with an active player answers "what's playing" at once.
+        """
+        state = self.data
+        if state.status not in (PlayerStatus.PLAYING, PlayerStatus.BUFFERING):
+            return
+        if _position_overrun(state):
+            LOGGER.debug("%s played past its end; assuming stopped", state.video_id)
+            self._update(self._idle_state(), immediate=True)
+            return
+        if self._unsub_stale_reply is not None or not self.api.connected():
+            return
+        self._stale_asked_at = dt_util.utcnow()
+        try:
+            await self.api.get_now_playing()
+        except (*_CONNECTION_ERRORS, NotConnectedException) as err:
+            LOGGER.debug("Error requesting now playing: %s", err)
+            return
+        self._unsub_stale_reply = async_call_later(
+            self.hass, STALE_REPLY_TIMEOUT, self._stale_reply_timeout
+        )
+
+    @callback
+    def _stale_reply_timeout(self, _now: datetime) -> None:
+        """Go idle if the TV didn't answer the staleness check."""
+        self._unsub_stale_reply = None
+        answered = (
+            self._last_event_at is not None
+            and self._stale_asked_at is not None
+            and self._last_event_at >= self._stale_asked_at
+        )
+        if answered or self._state.status not in (
+            PlayerStatus.PLAYING,
+            PlayerStatus.BUFFERING,
+        ):
+            return
+        LOGGER.debug(
+            "%s didn't answer; assuming the player stopped", self.config_entry.title
+        )
+        self._update(self._idle_state(), immediate=True)
 
     def _idle_state(self) -> TvState:
         if self._app_running is False:
@@ -481,6 +560,19 @@ class YouTubeOnTvCoordinator(DataUpdateCoordinator[TvState]):
         self._state = replace(self._state, title=title, channel=channel)
         if self._unsub_settle is None:
             self._publish()
+
+
+def _position_overrun(state: TvState) -> bool:
+    """Return True if a playing video's position is well past its end."""
+    if (
+        state.status is not PlayerStatus.PLAYING
+        or state.position is None
+        or state.duration is None
+        or state.position_updated_at is None
+    ):
+        return False
+    elapsed = (dt_util.utcnow() - state.position_updated_at).total_seconds()
+    return state.position + elapsed > state.duration + POSITION_OVERRUN
 
 
 def _equivalent(old: TvState, new: TvState) -> bool:

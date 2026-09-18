@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Generator
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
 
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
+from pytest_homeassistant_custom_component.test_util.aiohttp import (
+    AiohttpClientMocker,
+)
 
 from custom_components.youtube_on_tv.const import (
     CONF_APP_URL,
@@ -62,6 +65,26 @@ def fast_reconnect() -> Generator[None]:
 
 
 @pytest.fixture(autouse=True)
+def mock_oembed(aioclient_mock: AiohttpClientMocker) -> None:
+    """Answer video title lookups."""
+    aioclient_mock.get(
+        "https://www.youtube.com/oembed",
+        json={"title": "Dolor y Gloria", "author_name": "VivaSueciaVEVO"},
+    )
+
+
+@pytest.fixture
+def entity_registry_enabled_by_default() -> Generator[None]:
+    """Create entities that are disabled by default as enabled."""
+    with patch(
+        "homeassistant.helpers.entity.Entity.entity_registry_enabled_default",
+        new_callable=PropertyMock,
+        return_value=True,
+    ):
+        yield
+
+
+@pytest.fixture(autouse=True)
 def mock_ssdp_setup() -> Generator[None]:
     """Don't open SSDP sockets in tests."""
     with patch("homeassistant.components.ssdp.async_setup", return_value=True):
@@ -91,6 +114,9 @@ class FakeLounge:
         self.seek_to = AsyncMock(return_value=True)
         self.next = AsyncMock(return_value=True)
         self.previous = AsyncMock(return_value=True)
+        self.skip_ad = AsyncMock(return_value=True)
+        self.play_video = AsyncMock(return_value=True)
+        self.screen_name = "YouTube on TV"
 
     async def __aenter__(self) -> FakeLounge:
         self.session = MagicMock(closed=False)

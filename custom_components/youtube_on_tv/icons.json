@@ -7,6 +7,22 @@
           "on": "mdi:advertisements"
         }
       }
+    },
+    "button": {
+      "skip_ad": {
+        "default": "mdi:skip-next"
+      }
+    },
+    "sensor": {
+      "app_state": {
+        "default": "mdi:application",
+        "state": {
+          "running": "mdi:play-box",
+          "stopped": "mdi:stop-circle-outline",
+          "hidden": "mdi:application-outline",
+          "unreachable": "mdi:television-off"
+        }
+      }
     }
   }
 }

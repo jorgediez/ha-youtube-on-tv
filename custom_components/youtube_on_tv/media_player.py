@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 from datetime import datetime
+import re
+from typing import Any
+from urllib.parse import parse_qs, urlparse
 
 from homeassistant.components.media_player import (
     MediaPlayerDeviceClass,
@@ -12,13 +15,18 @@ from homeassistant.components.media_player import (
     MediaType,
 )
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import YouTubeOnTvConfigEntry
+from .const import DOMAIN
 from .coordinator import PlayerStatus, YouTubeOnTvCoordinator
 from .entity import YouTubeOnTvEntity
 
 PARALLEL_UPDATES = 1
+
+_VIDEO_ID_RE = re.compile(r"^[A-Za-z0-9_-]{11}$")
+_YOUTUBE_HOSTS = {"youtube.com", "m.youtube.com", "music.youtube.com", "youtu.be"}
 
 _STATES = {
     PlayerStatus.OFF: MediaPlayerState.OFF,
@@ -51,6 +59,7 @@ class YouTubeOnTvMediaPlayer(YouTubeOnTvEntity, MediaPlayerEntity):
         | MediaPlayerEntityFeature.SEEK
         | MediaPlayerEntityFeature.NEXT_TRACK
         | MediaPlayerEntityFeature.PREVIOUS_TRACK
+        | MediaPlayerEntityFeature.PLAY_MEDIA
     )
 
     def __init__(self, coordinator: YouTubeOnTvCoordinator) -> None:
@@ -118,3 +127,34 @@ class YouTubeOnTvMediaPlayer(YouTubeOnTvEntity, MediaPlayerEntity):
     async def async_media_previous_track(self) -> None:
         """Play the previous video."""
         await self.coordinator.async_command(self.coordinator.api.previous)
+
+    async def async_play_media(
+        self, media_type: str, media_id: str, **kwargs: Any
+    ) -> None:
+        """Play a YouTube video, given its id or URL."""
+        video_id = parse_video_id(media_id)
+        if video_id is None:
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key="invalid_video",
+                translation_placeholders={"media_id": media_id},
+            )
+        await self.coordinator.async_command(self.coordinator.api.play_video, video_id)
+
+
+def parse_video_id(media_id: str) -> str | None:
+    """Return the video id from a YouTube video id or URL."""
+    media_id = media_id.strip()
+    if _VIDEO_ID_RE.match(media_id):
+        return media_id
+    url = urlparse(media_id if "://" in media_id else f"https://{media_id}")
+    host = (url.hostname or "").removeprefix("www.")
+    if host not in _YOUTUBE_HOSTS:
+        return None
+    if host == "youtu.be":
+        candidate = url.path.strip("/")
+    elif url.path.startswith(("/shorts/", "/live/", "/embed/")):
+        candidate = url.path.split("/")[2]
+    else:
+        candidate = parse_qs(url.query).get("v", [""])[0]
+    return candidate if _VIDEO_ID_RE.match(candidate) else None

@@ -8,7 +8,12 @@ from homeassistant.core import HomeAssistant
 
 from .coordinator import YouTubeOnTvCoordinator
 
-PLATFORMS: list[Platform] = [Platform.BINARY_SENSOR, Platform.MEDIA_PLAYER]
+PLATFORMS: list[Platform] = [
+    Platform.BINARY_SENSOR,
+    Platform.BUTTON,
+    Platform.MEDIA_PLAYER,
+    Platform.SENSOR,
+]
 
 type YouTubeOnTvConfigEntry = ConfigEntry[YouTubeOnTvCoordinator]
 

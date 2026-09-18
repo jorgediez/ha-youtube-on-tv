@@ -17,7 +17,10 @@ It connects to the TV the same way the YouTube phone app does when you cast (You
   - State: `playing`, `paused`, `buffering`, `idle`, `off`
   - Video id, title, channel, thumbnail, duration and position
   - Play, pause, seek, next and previous
+  - Play any video by id or YouTube URL
 - **Ad playing** binary sensor, with a `skippable` attribute
+- **Skip ad** button, available as soon as the ad can be skipped
+- Diagnostic entities for the connection and the YouTube app state
 - Automatic discovery of TVs on your network (DIAL/SSDP), no pairing code needed
 - Works whether playback was started from a phone or with the TV remote
 
@@ -52,8 +55,13 @@ Requires Home Assistant 2026.3 or newer.
 
 Each TV becomes its own device, named **YouTube on _TV name_**, so it's easy to tell apart from the TV's own device. For a TV named "Samsung Neo QLED", the device has these entities:
 
-- `media_player.youtube_on_samsung_neo_qled`
-- `binary_sensor.youtube_on_samsung_neo_qled_ad_playing`
+| Entity | Description |
+|---|---|
+| `media_player.youtube_on_samsung_neo_qled` | What's playing, with playback controls |
+| `binary_sensor.youtube_on_samsung_neo_qled_ad_playing` | On while an ad plays; `skippable` attribute |
+| `button.youtube_on_samsung_neo_qled_skip_ad` | Skips the ad; unavailable until it can be skipped |
+| `binary_sensor.youtube_on_samsung_neo_qled_connectivity` | Diagnostic: connection to YouTube |
+| `sensor.youtube_on_samsung_neo_qled_app_state` | Diagnostic, disabled by default: `running`, `stopped`, `hidden` or `unreachable`, as reported by the TV. Only for TVs added by discovery or IP address. |
 
 The TV will list the connection as a linked device named "Home Assistant".
 
@@ -71,7 +79,38 @@ The TV will list the connection as a linked device named "Home Assistant".
 - While an ad plays, the position and duration are hidden, because the TV reports the ad's instead of the video's.
 - Titles and channel names come from YouTube's public oEmbed endpoint.
 - If the TV was set up by discovery or IP address, the integration also asks the TV every 30 seconds whether YouTube is running. This catches the app closing or the TV turning off, which the Lounge session doesn't always report.
+- If YouTube leaves the video without saying so, the TV stops sending updates. This happens when it drops to the "Who's watching?" screen or the home screen. To catch it, the integration asks the TV what's playing once a minute while a video plays. If there's no answer, the player switches to `idle` within about 70 seconds. It also goes `idle` if the position runs more than 30 seconds past the end of the video.
 - Volume isn't exposed: YouTube reports its own internal volume, not the TV's. Use your TV's integration (e.g. [Samsung Smart TV](https://www.home-assistant.io/integrations/samsungtv/)) for that.
+
+## Playing a video
+
+Use `media_player.play_media` with a video id or any YouTube video URL (`youtube.com/watch`, `youtu.be`, Shorts or live links):
+
+```yaml
+action: media_player.play_media
+target:
+  entity_id: media_player.youtube_on_samsung_neo_qled
+data:
+  media_content_type: video
+  media_content_id: https://www.youtube.com/watch?v=dQw4w9WgXcQ
+```
+
+Not yet tested on a real TV. It's expected to work while YouTube is open on the TV; starting the app from the background is untested.
+
+## Skipping ads automatically
+
+```yaml
+automation:
+  - alias: Skip YouTube ads
+    triggers:
+      - trigger: state
+        entity_id: button.youtube_on_samsung_neo_qled_skip_ad
+        from: unavailable
+    actions:
+      - action: button.press
+        target:
+          entity_id: button.youtube_on_samsung_neo_qled_skip_ad
+```
 
 ## Troubleshooting
 

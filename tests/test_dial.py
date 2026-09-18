@@ -131,7 +131,9 @@ async def test_screen_from_host_uses_ssdp_cache(
 async def test_screen_from_host_known_urls(
     hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
 ) -> None:
-    """Without SSDP, well-known DIAL app URLs are tried in turn."""
+    """Without SSDP or a description, well-known app URLs are tried in turn."""
+    aioclient_mock.get(LOCATION, exc=TimeoutError)
+    aioclient_mock.get(f"http://{HOST}:8008/ssdp/device-desc.xml", status=404)
     aioclient_mock.get(APP_URL, exc=TimeoutError)
     aioclient_mock.get(f"http://{HOST}:8008/apps/YouTube", text=APP_INFO)
     with patch(
@@ -142,6 +144,26 @@ async def test_screen_from_host_known_urls(
     assert screen.screen_id == SCREEN_ID
     assert screen.app_url == f"http://{HOST}:8008/apps/YouTube"
     assert screen.udn is None
+
+
+async def test_screen_from_host_known_description(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
+) -> None:
+    """Without SSDP, a known description URL still gives the TV's name."""
+    aioclient_mock.get(
+        LOCATION,
+        text=DESCRIPTION,
+        headers={"Application-URL": f"http://{HOST}:8080/ws/app/"},
+    )
+    aioclient_mock.get(APP_URL, text=APP_INFO)
+    with patch(
+        "custom_components.youtube_on_tv.dial.ssdp.async_get_discovery_info_by_st",
+        return_value=[],
+    ):
+        screen = await async_get_screen_from_host(hass, HOST)
+    assert screen.name == "Samsung Neo QLED & more"
+    assert screen.udn == UDN
+    assert screen.app_url == APP_URL
 
 
 @pytest.mark.parametrize(

@@ -60,6 +60,9 @@
     },
     "command_failed": {
       "message": "Failed to send the command to the TV: {error}"
+    },
+    "invalid_video": {
+      "message": "\"{media_id}\" is not a YouTube video id or URL."
     }
   },
   "device": {
@@ -79,6 +82,22 @@
               "false": "No"
             }
           }
+        }
+      }
+    },
+    "button": {
+      "skip_ad": {
+        "name": "Skip ad"
+      }
+    },
+    "sensor": {
+      "app_state": {
+        "name": "App state",
+        "state": {
+          "running": "Running",
+          "stopped": "Stopped",
+          "hidden": "In background",
+          "unreachable": "Unreachable"
         }
       }
     }

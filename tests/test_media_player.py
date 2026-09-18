@@ -11,9 +11,6 @@ from pytest_homeassistant_custom_component.common import (
     MockConfigEntry,
     async_fire_time_changed,
 )
-from pytest_homeassistant_custom_component.test_util.aiohttp import (
-    AiohttpClientMocker,
-)
 from pyytlounge import (
     AdPlayingEvent,
     AdStateEvent,
@@ -23,7 +20,12 @@ from pyytlounge import (
     State,
 )
 
-from custom_components.youtube_on_tv.const import APP_STATE_INTERVAL, SETTLE_DELAY
+from custom_components.youtube_on_tv.const import (
+    APP_STATE_INTERVAL,
+    SETTLE_DELAY,
+    STALE_CHECK_INTERVAL,
+    STALE_REPLY_TIMEOUT,
+)
 from custom_components.youtube_on_tv.coordinator import YouTubeOnTvCoordinator
 from homeassistant.components.media_player import (
     ATTR_MEDIA_ARTIST,
@@ -57,13 +59,6 @@ from .conftest import FakeLounge, wait_for
 ENTITY_ID = "media_player.youtube_on_samsung_neo_qled"
 AD_SENSOR_ID = "binary_sensor.youtube_on_samsung_neo_qled_ad_playing"
 VIDEO_ID = "Yeke1krzPFM"
-OEMBED = {"title": "Dolor y Gloria", "author_name": "VivaSueciaVEVO"}
-
-
-@pytest.fixture(autouse=True)
-def mock_oembed(aioclient_mock: AiohttpClientMocker) -> None:
-    """Answer title lookups."""
-    aioclient_mock.get("https://www.youtube.com/oembed", json=OEMBED)
 
 
 def _coordinator(entry: MockConfigEntry) -> YouTubeOnTvCoordinator:
@@ -402,3 +397,89 @@ async def test_library_events_are_forwarded(
     await listener.disconnected(DisconnectedEvent({"reason": "disconnectedByUser"}))
     await hass.async_block_till_done()
     assert hass.states.get(ENTITY_ID).state == STATE_OFF
+
+
+async def _tick(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory, seconds: float
+) -> None:
+    freezer.tick(timedelta(seconds=seconds))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+
+
+async def test_silent_tv_goes_idle(
+    hass: HomeAssistant,
+    init_integration: FakeLounge,
+    mock_config_entry: MockConfigEntry,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """A TV that stops answering (profile picker, home screen) ends playback."""
+    coordinator = _coordinator(mock_config_entry)
+    coordinator.handle_now_playing(_now_playing(VIDEO_ID, State.Playing, 100, 900))
+    await hass.async_block_till_done()
+    init_integration.get_now_playing.reset_mock()
+
+    await _tick(hass, freezer, STALE_CHECK_INTERVAL.total_seconds())
+    init_integration.get_now_playing.assert_awaited_once()
+    assert hass.states.get(ENTITY_ID).state == STATE_PLAYING
+
+    await _tick(hass, freezer, STALE_REPLY_TIMEOUT)
+    state = hass.states.get(ENTITY_ID)
+    assert state.state == STATE_IDLE
+    assert ATTR_MEDIA_CONTENT_ID not in state.attributes
+
+
+async def test_answering_tv_keeps_playing(
+    hass: HomeAssistant,
+    init_integration: FakeLounge,
+    mock_config_entry: MockConfigEntry,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """A TV that answers the check keeps its state."""
+    coordinator = _coordinator(mock_config_entry)
+    coordinator.handle_now_playing(_now_playing(VIDEO_ID, State.Playing, 100, 900))
+    await hass.async_block_till_done()
+
+    async def answer() -> bool:
+        coordinator.handle_now_playing(_now_playing(VIDEO_ID, State.Playing, 160, 900))
+        return True
+
+    init_integration.get_now_playing.side_effect = answer
+    await _tick(hass, freezer, STALE_CHECK_INTERVAL.total_seconds())
+    await _tick(hass, freezer, STALE_REPLY_TIMEOUT)
+    assert hass.states.get(ENTITY_ID).state == STATE_PLAYING
+
+
+async def test_position_past_end_goes_idle(
+    hass: HomeAssistant,
+    init_integration: FakeLounge,
+    mock_config_entry: MockConfigEntry,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """A video that "plays" well past its end is treated as stopped at once."""
+    coordinator = _coordinator(mock_config_entry)
+    coordinator.handle_now_playing(_now_playing(VIDEO_ID, State.Playing, 970, 987))
+    await hass.async_block_till_done()
+    init_integration.get_now_playing.reset_mock()
+
+    await _tick(hass, freezer, STALE_CHECK_INTERVAL.total_seconds())
+    assert hass.states.get(ENTITY_ID).state == STATE_IDLE
+    init_integration.get_now_playing.assert_not_awaited()
+
+
+async def test_paused_is_not_checked(
+    hass: HomeAssistant,
+    init_integration: FakeLounge,
+    mock_config_entry: MockConfigEntry,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """A paused video stays paused; the TV isn't asked."""
+    coordinator = _coordinator(mock_config_entry)
+    coordinator.handle_now_playing(_now_playing(VIDEO_ID, State.Paused, 100, 900))
+    await _settle(hass, freezer)
+    init_integration.get_now_playing.reset_mock()
+
+    await _tick(hass, freezer, STALE_CHECK_INTERVAL.total_seconds())
+    await _tick(hass, freezer, STALE_REPLY_TIMEOUT)
+    assert hass.states.get(ENTITY_ID).state == STATE_PAUSED
+    init_integration.get_now_playing.assert_not_awaited()

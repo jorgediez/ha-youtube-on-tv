@@ -31,5 +31,15 @@ RECONNECT_MAX_DELAY: Final = 300
 # TV going to standby, which the Lounge session doesn't always report.
 APP_STATE_INTERVAL: Final = timedelta(seconds=30)
 
+# The TV sends no event when YouTube drops to its profile picker or home
+# screen mid-video. While playing, it's asked what's playing this often; no
+# answer within STALE_REPLY_TIMEOUT seconds means the player has stopped.
+STALE_CHECK_INTERVAL: Final = timedelta(seconds=60)
+STALE_REPLY_TIMEOUT: Final = 10
+
+# A playing video whose extrapolated position is this many seconds past its
+# end is assumed to have stopped.
+POSITION_OVERRUN: Final = 30
+
 DIAL_TIMEOUT: Final = 5
 DIAL_ST: Final = "urn:dial-multiscreen-org:service:dial:1"

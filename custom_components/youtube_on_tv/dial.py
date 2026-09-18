@@ -15,8 +15,15 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .const import DIAL_ST, DIAL_TIMEOUT
 
-# YouTube app URLs used by common DIAL servers, tried when the TV hasn't been
-# seen by SSDP (e.g. it's on another subnet). {host} is replaced.
+# Where common DIAL servers publish their device description, tried when the
+# TV hasn't been seen by SSDP (e.g. it's on another subnet). The description
+# gives the TV's name and model. {host} is replaced.
+KNOWN_DESCRIPTION_URLS = (
+    "http://{host}:7678/nservice/",  # Samsung Tizen
+    "http://{host}:8008/ssdp/device-desc.xml",  # Chromecast, Google/Android TV
+)
+
+# YouTube app URLs of common DIAL servers, the last resort (no TV name).
 KNOWN_APP_URLS = (
     "http://{host}:8080/ws/app/YouTube",  # Samsung Tizen
     "http://{host}:8008/apps/YouTube",  # Chromecast, Google/Android TV
@@ -123,8 +130,18 @@ async def async_get_screen_from_host(hass: HomeAssistant, host: str) -> DialScre
         if discovery.ssdp_location and _host_of(discovery.ssdp_location) == host:
             return await async_get_screen_from_location(hass, discovery.ssdp_location)
 
-    session = async_get_clientsession(hass)
     error: DialError = DialConnectionError(f"No DIAL server found on {host}")
+    for template in KNOWN_DESCRIPTION_URLS:
+        try:
+            return await async_get_screen_from_location(
+                hass, template.format(host=host)
+            )
+        except DialNoScreenError as err:
+            error = err
+        except DialConnectionError:
+            continue
+
+    session = async_get_clientsession(hass)
     for template in KNOWN_APP_URLS:
         try:
             return await _async_screen_from_app_url(session, template.format(host=host))

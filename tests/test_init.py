@@ -118,9 +118,13 @@ async def test_diagnostics(
     assert diagnostics["lounge"] == {
         "linked": True,
         "connected": True,
+        "screen_name": "YouTube on TV",
         "screen_device_name": "Samsung TQ75QN900FTXXC",
     }
+    assert diagnostics["dial"] == {"polled": True, "app_state": "running"}
+    assert diagnostics["versions"]["integration"] == "0.1.0"
     assert diagnostics["state"]["status"] == "off"
+    assert diagnostics["pending_state"]["status"] == "off"
     assert SCREEN_ID not in str(diagnostics)
 
 
@@ -151,6 +155,9 @@ async def test_one_device_per_tv(
             {
                 "media_player.youtube_on_samsung_neo_qled",
                 "binary_sensor.youtube_on_samsung_neo_qled_ad_playing",
+                "binary_sensor.youtube_on_samsung_neo_qled_connectivity",
+                "button.youtube_on_samsung_neo_qled_skip_ad",
+                "sensor.youtube_on_samsung_neo_qled_app_state",
             },
         ),
         bedroom: (
@@ -159,6 +166,9 @@ async def test_one_device_per_tv(
             {
                 "media_player.youtube_on_bedroom_tv",
                 "binary_sensor.youtube_on_bedroom_tv_ad_playing",
+                "binary_sensor.youtube_on_bedroom_tv_connectivity",
+                "button.youtube_on_bedroom_tv_skip_ad",
+                "sensor.youtube_on_bedroom_tv_app_state",
             },
         ),
     }
@@ -168,7 +178,9 @@ async def test_one_device_per_tv(
         assert device.manufacturer == "Samsung"
         assert device.model == model
         assert device.identifiers == {(DOMAIN, entry.unique_id)}
-        entities = er.async_entries_for_device(entity_registry, device.id)
+        entities = er.async_entries_for_device(
+            entity_registry, device.id, include_disabled_entities=True
+        )
         assert {entity.entity_id for entity in entities} == entity_ids
 
 
