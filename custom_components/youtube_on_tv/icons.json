@@ -1,0 +1,12 @@
+{
+  "entity": {
+    "binary_sensor": {
+      "ad_playing": {
+        "default": "mdi:advertisements-off",
+        "state": {
+          "on": "mdi:advertisements"
+        }
+      }
+    }
+  }
+}

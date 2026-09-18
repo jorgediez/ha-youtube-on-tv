@@ -1,0 +1,4 @@
+pytest-homeassistant-custom-component==0.13.365
+async-upnp-client==0.48.1
+pyytlounge==3.4.0
+ruff==0.16.8

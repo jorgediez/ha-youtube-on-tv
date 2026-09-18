@@ -1,0 +1,19 @@
+{
+  "domain": "youtube_on_tv",
+  "name": "YouTube on TV",
+  "codeowners": ["@jorgediez"],
+  "config_flow": true,
+  "dependencies": ["ssdp"],
+  "documentation": "https://github.com/jorgediez/ha-youtube-on-tv",
+  "integration_type": "device",
+  "iot_class": "cloud_push",
+  "issue_tracker": "https://github.com/jorgediez/ha-youtube-on-tv/issues",
+  "loggers": ["pyytlounge"],
+  "requirements": ["pyytlounge==3.4.0"],
+  "ssdp": [
+    {
+      "st": "urn:dial-multiscreen-org:service:dial:1"
+    }
+  ],
+  "version": "0.1.0"
+}
