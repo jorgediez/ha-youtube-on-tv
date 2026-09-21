@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
@@ -26,6 +28,7 @@ async def async_setup_entry(
     entities: list[SensorEntity] = [
         YouTubeOnTvUpNextSensor(coordinator),
         YouTubeOnTvSubtitlesSensor(coordinator),
+        YouTubeOnTvVideoQualitySensor(coordinator),
     ]
     # The app state comes from DIAL, unknown for TVs added with a TV code.
     if coordinator.has_app_state:
@@ -99,3 +102,37 @@ class YouTubeOnTvSubtitlesSensor(YouTubeOnTvEntity, SensorEntity):
     def native_value(self) -> str | None:
         """Return the subtitles language."""
         return self.coordinator.data.subtitles
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return the track details and how the TV displays them."""
+        data = self.coordinator.data
+        return {
+            "language_code": data.subtitles_code,
+            "track_name": data.subtitles_track,
+            # "asr" means automatically generated.
+            "kind": data.subtitles_kind,
+            "style": data.subtitles_style,
+        }
+
+
+class YouTubeOnTvVideoQualitySensor(YouTubeOnTvEntity, SensorEntity):
+    """Resolution the TV is playing, as it reports it."""
+
+    _attr_translation_key = "video_quality"
+    _attr_native_unit_of_measurement = "p"
+
+    def __init__(self, coordinator: YouTubeOnTvCoordinator) -> None:
+        """Initialize the sensor."""
+        super().__init__(coordinator, "video_quality")
+
+    @property
+    def native_value(self) -> str | None:
+        """Return the current resolution, e.g. 1080."""
+        return self.coordinator.data.video_quality
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return the resolutions the video offers."""
+        levels = self.coordinator.data.video_quality_levels
+        return {"available_levels": list(levels) if levels else None}

@@ -31,6 +31,9 @@
         "state": {
           "off": "mdi:subtitles-outline"
         }
+      },
+      "video_quality": {
+        "default": "mdi:high-definition"
       }
     },
     "switch": {
@@ -38,6 +41,12 @@
         "default": "mdi:autorenew",
         "state": {
           "off": "mdi:autorenew-off"
+        }
+      },
+      "subtitles": {
+        "default": "mdi:subtitles",
+        "state": {
+          "off": "mdi:subtitles-outline"
         }
       }
     },

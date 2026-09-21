@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import timedelta
+from unittest.mock import AsyncMock, MagicMock
 
 from freezegun.api import FrozenDateTimeFactory
 import pytest
@@ -17,6 +18,7 @@ from pyytlounge import (
 )
 
 from custom_components.youtube_on_tv.const import SETTLE_DELAY
+from custom_components.youtube_on_tv.coordinator import _LoungeApi
 from homeassistant.components.select import (
     ATTR_OPTION,
     DOMAIN as SELECT_DOMAIN,
@@ -36,7 +38,7 @@ from homeassistant.const import (
     STATE_UNKNOWN,
 )
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import HomeAssistantError
+from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import entity_registry as er
 
 from .conftest import FakeLounge
@@ -46,6 +48,8 @@ AUTOPLAY_ID = f"switch.{PREFIX}_autoplay"
 SPEED_ID = f"select.{PREFIX}_playback_speed"
 UP_NEXT_ID = f"sensor.{PREFIX}_up_next"
 SUBTITLES_ID = f"sensor.{PREFIX}_subtitles"
+SUBTITLES_SWITCH_ID = f"switch.{PREFIX}_subtitles"
+QUALITY_ID = f"sensor.{PREFIX}_video_quality"
 PLAYER_ID = f"media_player.{PREFIX}"
 VIDEO_ID = "Yeke1krzPFM"
 NEXT_ID = "SJZe9WkKcVc"
@@ -316,3 +320,127 @@ async def test_autoplay_unsupported_flicker(
     assert hass.states.get(AUTOPLAY_ID).state == STATE_ON
     await _settle(hass, freezer)
     assert hass.states.get(AUTOPLAY_ID).state == STATE_UNAVAILABLE
+
+
+async def test_video_quality(
+    hass: HomeAssistant, init_integration: FakeLounge, mock_config_entry
+) -> None:
+    """The resolution the TV reports shows up as a sensor."""
+    coordinator = mock_config_entry.runtime_data
+    await init_integration.listener.now_playing_changed(_now_playing(VIDEO_ID))
+    await hass.async_block_till_done()
+    assert hass.states.get(QUALITY_ID).state == STATE_UNKNOWN
+
+    coordinator.handle_video_quality(
+        {
+            "videoId": VIDEO_ID,
+            "qualityLevel": "1080",
+            "availableQualityLevels": "[0,1080,720,480,360,240,144]",
+        }
+    )
+    await hass.async_block_till_done()
+    state = hass.states.get(QUALITY_ID)
+    assert state.state == "1080"
+    assert state.attributes["available_levels"] == [0, 1080, 720, 480, 360, 240, 144]
+
+    # A report for another video is ignored, and bad data doesn't break it.
+    coordinator.handle_video_quality({"videoId": "otherVideo1", "qualityLevel": "144"})
+    coordinator.handle_video_quality(
+        {"videoId": VIDEO_ID, "qualityLevel": "720", "availableQualityLevels": "junk"}
+    )
+    await hass.async_block_till_done()
+    state = hass.states.get(QUALITY_ID)
+    assert state.state == "720"
+    assert state.attributes["available_levels"] is None
+
+    # It belongs to the video, so it clears when playback stops.
+    await init_integration.listener.now_playing_changed(_now_playing(None, "-1"))
+    await hass.async_block_till_done()
+    assert hass.states.get(QUALITY_ID).state == STATE_UNKNOWN
+
+
+async def test_video_quality_event_is_picked_up(hass: HomeAssistant) -> None:
+    """The library doesn't dispatch onVideoQualityChanged, so we hook it."""
+    coordinator = MagicMock()
+    api = _LoungeApi(coordinator, "test")
+    await api._process_event("onVideoQualityChanged", [{"qualityLevel": "720"}])
+    coordinator.handle_video_quality.assert_called_once_with({"qualityLevel": "720"})
+    # Events the library knows about still reach it.
+    api.event_listener = AsyncMock()
+    await api._process_event("onVolumeChanged", [{"volume": "50", "muted": "false"}])
+    api.event_listener.volume_changed.assert_awaited_once()
+
+
+async def test_subtitles_switch(
+    hass: HomeAssistant, init_integration: FakeLounge
+) -> None:
+    """Subtitles can be turned off and back on in the last language used."""
+    listener = init_integration.listener
+    await listener.now_playing_changed(_now_playing(VIDEO_ID))
+    assert hass.states.get(SUBTITLES_SWITCH_ID).state == STATE_UNKNOWN
+
+    await listener.subtitles_track_changed(
+        SubtitlesTrackEvent(
+            {
+                "videoId": VIDEO_ID,
+                "languageCode": "es",
+                "languageName": "Español",
+                "kind": "asr",
+                "style": '{"color": "#fff"}',
+            }
+        )
+    )
+    await hass.async_block_till_done()
+    assert hass.states.get(SUBTITLES_SWITCH_ID).state == STATE_ON
+    attrs = hass.states.get(SUBTITLES_ID).attributes
+    assert attrs["language_code"] == "es"
+    assert attrs["kind"] == "asr"
+    assert attrs["style"] == {"color": "#fff"}
+
+    await hass.services.async_call(
+        SWITCH_DOMAIN,
+        SERVICE_TURN_OFF,
+        {ATTR_ENTITY_ID: SUBTITLES_SWITCH_ID},
+        blocking=True,
+    )
+    init_integration.set_closed_captions.assert_awaited_once_with(None, VIDEO_ID)
+    assert hass.states.get(SUBTITLES_SWITCH_ID).state == STATE_OFF
+    assert hass.states.get(SUBTITLES_ID).state == "off"
+
+    await hass.services.async_call(
+        SWITCH_DOMAIN,
+        SERVICE_TURN_ON,
+        {ATTR_ENTITY_ID: SUBTITLES_SWITCH_ID},
+        blocking=True,
+    )
+    init_integration.set_closed_captions.assert_awaited_with("es", VIDEO_ID)
+    assert hass.states.get(SUBTITLES_SWITCH_ID).state == STATE_ON
+    assert hass.states.get(SUBTITLES_ID).state == "Español"
+
+
+async def test_subtitles_switch_errors(
+    hass: HomeAssistant, init_integration: FakeLounge
+) -> None:
+    """Turning subtitles on needs a known language and a playing video."""
+    await init_integration.listener.now_playing_changed(_now_playing(VIDEO_ID))
+    await hass.async_block_till_done()
+    with pytest.raises(ServiceValidationError) as err:
+        await hass.services.async_call(
+            SWITCH_DOMAIN,
+            SERVICE_TURN_ON,
+            {ATTR_ENTITY_ID: SUBTITLES_SWITCH_ID},
+            blocking=True,
+        )
+    assert err.value.translation_key == "no_subtitles_language"
+
+    await init_integration.listener.now_playing_changed(_now_playing(None, "-1"))
+    await hass.async_block_till_done()
+    with pytest.raises(ServiceValidationError) as err:
+        await hass.services.async_call(
+            SWITCH_DOMAIN,
+            SERVICE_TURN_OFF,
+            {ATTR_ENTITY_ID: SUBTITLES_SWITCH_ID},
+            blocking=True,
+        )
+    assert err.value.translation_key == "no_video"
+    init_integration.set_closed_captions.assert_not_awaited()

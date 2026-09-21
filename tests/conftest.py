@@ -94,7 +94,10 @@ def mock_ssdp_setup() -> Generator[None]:
 class FakeLounge:
     """Stand-in for pyytlounge.YtLoungeApi."""
 
-    def __init__(self, device_name, event_listener=None, logger=None) -> None:
+    def __init__(
+        self, coordinator=None, device_name="", event_listener=None, logger=None
+    ) -> None:
+        self.coordinator = coordinator
         self.device_name = device_name
         self.listener = event_listener
         self.session: MagicMock | None = None
@@ -118,6 +121,7 @@ class FakeLounge:
         self.play_video = AsyncMock(return_value=True)
         self.set_auto_play_mode = AsyncMock(return_value=True)
         self.set_playback_speed = AsyncMock(return_value=True)
+        self.set_closed_captions = AsyncMock(return_value=True)
         self.screen_name = "YouTube on TV"
 
     async def __aenter__(self) -> FakeLounge:
@@ -170,7 +174,7 @@ def mock_lounge() -> Generator[list[FakeLounge]]:
         return instance
 
     with patch(
-        "custom_components.youtube_on_tv.coordinator.YtLoungeApi", side_effect=factory
+        "custom_components.youtube_on_tv.coordinator._LoungeApi", side_effect=factory
     ):
         yield instances
 

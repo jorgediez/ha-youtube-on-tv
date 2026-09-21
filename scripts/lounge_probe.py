@@ -151,11 +151,17 @@ async def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--host", required=True, help="TV IP address or hostname")
     parser.add_argument("--seconds", type=int, default=120)
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="log raw events, including ones the library doesn't handle",
+    )
     args = parser.parse_args()
 
-    # pyytlounge logs the lounge token at INFO, so keep its logger at WARNING.
+    # pyytlounge logs the lounge token at INFO, so keep its logger at WARNING
+    # unless raw events are wanted.
     lib_logger = logging.getLogger("pyytlounge")
-    lib_logger.setLevel(logging.WARNING)
+    lib_logger.setLevel(logging.DEBUG if args.debug else logging.WARNING)
     logging.basicConfig(format="[lib] %(levelname)s %(message)s")
 
     async with aiohttp.ClientSession() as session:

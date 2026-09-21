@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable
+import contextlib
 from dataclasses import dataclass, replace
 from datetime import datetime
 from enum import StrEnum
+import json
 import logging
 import time
 from typing import TYPE_CHECKING, Any
@@ -105,7 +107,16 @@ class TvState:
     autoplay_supported: bool = True
     playback_speed: float | None = None
     subtitles: str | None = None
+    subtitles_code: str | None = None
+    subtitles_track: str | None = None
+    subtitles_kind: str | None = None
+    subtitles_style: dict[str, Any] | None = None
+    # Last language actually used, kept while subtitles are off.
+    last_subtitles_code: str | None = None
+    last_subtitles_name: str | None = None
     # Tied to the current video, cleared when playback stops.
+    video_quality: str | None = None
+    video_quality_levels: tuple[int, ...] | None = None
     up_next_video_id: str | None = None
     up_next_title: str | None = None
 
@@ -122,6 +133,23 @@ class TvState:
         if self.up_next_video_id is None:
             return None
         return THUMBNAIL_URL.format(video_id=self.up_next_video_id)
+
+
+class _LoungeApi(YtLoungeApi):
+    """Adds the video quality event, which pyytlounge doesn't dispatch.
+
+    The TV reports the resolution through "onVideoQualityChanged"; the
+    library ignores unknown events, so it is picked up here.
+    """
+
+    def __init__(self, coordinator: YouTubeOnTvCoordinator, *args: Any) -> None:
+        super().__init__(*args)
+        self._coordinator = coordinator
+
+    async def _process_event(self, event_type: str, args: list[Any]) -> None:
+        if event_type == "onVideoQualityChanged" and args:
+            self._coordinator.handle_video_quality(args[0])
+        await super()._process_event(event_type, args)
 
 
 class _Listener(EventListener):
@@ -155,9 +183,7 @@ class _Listener(EventListener):
         self._coordinator.handle_up_next(event.video_id)
 
     async def subtitles_track_changed(self, event: SubtitlesTrackEvent) -> None:
-        self._coordinator.handle_subtitles(
-            event.video_id, event.language_name or event.language_code
-        )
+        self._coordinator.handle_subtitles(event)
 
     async def playback_speed_changed(self, event: PlaybackSpeedEvent) -> None:
         self._coordinator.handle_playback_speed(event.playback_speed)
@@ -177,8 +203,8 @@ class YouTubeOnTvCoordinator(DataUpdateCoordinator[TvState]):
             hass, LOGGER, config_entry=entry, name=DOMAIN, always_update=False
         )
         self.data = TvState()
-        self.api = YtLoungeApi(
-            LOUNGE_DEVICE_NAME, _Listener(self), logging.getLogger("pyytlounge")
+        self.api = _LoungeApi(
+            self, LOUNGE_DEVICE_NAME, _Listener(self), logging.getLogger("pyytlounge")
         )
         self._screen_id: str = entry.data[CONF_SCREEN_ID]
         self._app_url: str | None = entry.data.get(CONF_APP_URL)
@@ -494,11 +520,66 @@ class YouTubeOnTvCoordinator(DataUpdateCoordinator[TvState]):
             self._async_request_title(video_id)
 
     @callback
-    def handle_subtitles(self, video_id: str | None, language: str | None) -> None:
+    def handle_subtitles(self, event: SubtitlesTrackEvent) -> None:
         """Handle a subtitles track change; no language means off."""
+        if (
+            event.video_id
+            and self._state.video_id
+            and event.video_id != self._state.video_id
+        ):
+            return
+        style = None
+        if event.style:
+            with contextlib.suppress(ValueError, TypeError):
+                style = json.loads(event.style)
+        language = event.language_name or event.language_code
+        self._update_setting(
+            replace(
+                self._state,
+                subtitles=language or SUBTITLES_OFF,
+                subtitles_code=event.language_code,
+                subtitles_track=event.track_name or None,
+                subtitles_kind=event.kind,
+                subtitles_style=style if isinstance(style, dict) else None,
+                last_subtitles_code=event.language_code
+                or self._state.last_subtitles_code,
+                last_subtitles_name=language or self._state.last_subtitles_name,
+            )
+        )
+
+    @callback
+    def note_subtitles(self, code: str | None, name: str | None) -> None:
+        """Record subtitles set from Home Assistant, before the TV reports it."""
+        self._update_setting(
+            replace(
+                self._state,
+                subtitles=name or SUBTITLES_OFF,
+                subtitles_code=code,
+                last_subtitles_code=code or self._state.last_subtitles_code,
+                last_subtitles_name=name or self._state.last_subtitles_name,
+            )
+        )
+
+    @callback
+    def handle_video_quality(self, data: dict[str, Any]) -> None:
+        """Handle the TV reporting the resolution it is playing."""
+        video_id = data.get("videoId")
         if video_id and self._state.video_id and video_id != self._state.video_id:
             return
-        self._update_setting(replace(self._state, subtitles=language or SUBTITLES_OFF))
+        levels = None
+        raw_levels = data.get("availableQualityLevels")
+        if raw_levels:
+            with contextlib.suppress(ValueError, TypeError):
+                parsed = json.loads(raw_levels)
+                if isinstance(parsed, list):
+                    levels = tuple(int(level) for level in parsed)
+        self._update_setting(
+            replace(
+                self._state,
+                video_quality=data.get("qualityLevel") or None,
+                video_quality_levels=levels,
+            )
+        )
 
     @callback
     def handle_playback_speed(self, speed: float) -> None:
@@ -581,6 +662,12 @@ class YouTubeOnTvCoordinator(DataUpdateCoordinator[TvState]):
             autoplay_supported=self._state.autoplay_supported,
             playback_speed=self._state.playback_speed,
             subtitles=self._state.subtitles,
+            subtitles_code=self._state.subtitles_code,
+            subtitles_track=self._state.subtitles_track,
+            subtitles_kind=self._state.subtitles_kind,
+            subtitles_style=self._state.subtitles_style,
+            last_subtitles_code=self._state.last_subtitles_code,
+            last_subtitles_name=self._state.last_subtitles_name,
         )
 
     @callback

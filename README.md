@@ -20,7 +20,8 @@ It connects to the TV the same way the YouTube phone app does when you cast (You
   - Play any video by id or YouTube URL
 - **Ad playing** binary sensor, with a `skippable` attribute
 - **Skip ad** button, available as soon as the ad can be skipped
-- **Autoplay** switch and **Playback speed** select
+- **Autoplay** and **Subtitles** switches, and a **Playback speed** select
+- **Video quality** sensor
 - **Up next** and **Subtitles** sensors
 - Diagnostic entities for the connection and the YouTube app state
 - Automatic discovery of TVs on your network (DIAL/SSDP), no pairing code needed
@@ -66,7 +67,9 @@ Each TV becomes its own device, named **YouTube on _TV name_**, so it's easy to 
 | `switch.youtube_on_samsung_neo_qled_autoplay` | YouTube's autoplay setting (config) |
 | `select.youtube_on_samsung_neo_qled_playback_speed` | 0.25× to 2× |
 | `sensor.youtube_on_samsung_neo_qled_up_next` | Title of the video autoplay plays next; `video_id` attribute and thumbnail. Only set when the TV announces one, which some TVs rarely do. |
-| `sensor.youtube_on_samsung_neo_qled_subtitles` | Subtitles language, or `off`; kept across videos |
+| `switch.youtube_on_samsung_neo_qled_subtitles` | Turns subtitles off, or back on in the last language used |
+| `sensor.youtube_on_samsung_neo_qled_subtitles` | Subtitles language, or `off`; kept across videos. Attributes: `language_code`, `track_name`, `kind` (`asr` means auto-generated) and the TV's display `style` |
+| `sensor.youtube_on_samsung_neo_qled_video_quality` | Resolution being played, e.g. 1080, with an `available_levels` attribute |
 | `sensor.youtube_on_samsung_neo_qled_app_state` | Diagnostic, disabled by default: `running`, `stopped`, `hidden` or `unreachable`, as reported by the TV. Only for TVs added by discovery or IP address. |
 
 The TV will list the connection as a linked device named "Home Assistant".
@@ -88,6 +91,7 @@ The TV will list the connection as a linked device named "Home Assistant".
 - If YouTube leaves the video without saying so, the TV stops sending updates. This happens when it drops to the "Who's watching?" screen or the home screen. To catch it, the integration asks the TV what's playing once a minute while a video plays. If there's no answer, the player switches to `idle` within about 70 seconds. It also goes `idle` if the position runs more than 30 seconds past the end of the video.
 - Autoplay, playback speed and subtitles are known only once the TV reports them, so they show as unknown until then. The TV reports them when they change, so they're kept across videos and while playback is stopped. Up next belongs to the current video and is cleared with it.
 - Changing autoplay or the playback speed from Home Assistant updates the entity at once, because the TV can take a few seconds to apply the change and report it back. If the TV then reports something different, its value wins.
+- The protocol has no way to toggle "stats for nerds" or to change how subtitles are displayed, so those stay on the TV's own remote.
 - Volume isn't exposed: YouTube reports its own internal volume, not the TV's. Use your TV's integration (e.g. [Samsung Smart TV](https://www.home-assistant.io/integrations/samsungtv/)) for that.
 
 ## Playing a video

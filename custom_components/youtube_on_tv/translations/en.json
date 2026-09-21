@@ -63,6 +63,12 @@
     },
     "invalid_video": {
       "message": "\"{media_id}\" is not a YouTube video id or URL."
+    },
+    "no_subtitles_language": {
+      "message": "No subtitles language is known yet. Turn subtitles on once on the TV."
+    },
+    "no_video": {
+      "message": "No video is playing on the TV."
     }
   },
   "device": {
@@ -105,11 +111,17 @@
       },
       "subtitles": {
         "name": "Subtitles"
+      },
+      "video_quality": {
+        "name": "Video quality"
       }
     },
     "switch": {
       "autoplay": {
         "name": "Autoplay"
+      },
+      "subtitles": {
+        "name": "Subtitles"
       }
     },
     "select": {
