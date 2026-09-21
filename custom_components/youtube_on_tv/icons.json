@@ -22,6 +22,28 @@
           "hidden": "mdi:application-outline",
           "unreachable": "mdi:television-off"
         }
+      },
+      "up_next": {
+        "default": "mdi:playlist-play"
+      },
+      "subtitles": {
+        "default": "mdi:subtitles",
+        "state": {
+          "off": "mdi:subtitles-outline"
+        }
+      }
+    },
+    "switch": {
+      "autoplay": {
+        "default": "mdi:autorenew",
+        "state": {
+          "off": "mdi:autorenew-off"
+        }
+      }
+    },
+    "select": {
+      "playback_speed": {
+        "default": "mdi:play-speed"
       }
     }
   }

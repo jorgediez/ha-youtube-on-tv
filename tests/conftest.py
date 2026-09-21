@@ -116,6 +116,8 @@ class FakeLounge:
         self.previous = AsyncMock(return_value=True)
         self.skip_ad = AsyncMock(return_value=True)
         self.play_video = AsyncMock(return_value=True)
+        self.set_auto_play_mode = AsyncMock(return_value=True)
+        self.set_playback_speed = AsyncMock(return_value=True)
         self.screen_name = "YouTube on TV"
 
     async def __aenter__(self) -> FakeLounge:

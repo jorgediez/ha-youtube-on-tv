@@ -15,11 +15,15 @@ import aiohttp
 from pyytlounge import (
     AdPlayingEvent,
     AdStateEvent,
+    AutoplayModeChangedEvent,
+    AutoplayUpNextEvent,
     DisconnectedEvent,
     EventListener,
     NowPlayingEvent,
+    PlaybackSpeedEvent,
     PlaybackStateEvent,
     State,
+    SubtitlesTrackEvent,
     YtLoungeApi,
 )
 from pyytlounge.exceptions import NotConnectedException, NotLinkedException
@@ -59,6 +63,7 @@ if TYPE_CHECKING:
 OEMBED_URL = "https://www.youtube.com/oembed"
 THUMBNAIL_URL = "https://i.ytimg.com/vi/{video_id}/hqdefault.jpg"
 MAX_TITLE_CACHE = 50
+SUBTITLES_OFF = "off"
 
 # Errors from pyytlounge when YouTube doesn't return a lounge token for the
 # screen id, i.e. the TV revoked or rotated it.
@@ -95,6 +100,14 @@ class TvState:
     position_updated_at: datetime | None = None
     ad_playing: bool = False
     ad_skippable: bool = False
+    # App settings, kept across videos and when playback stops.
+    autoplay: bool | None = None
+    autoplay_supported: bool = True
+    playback_speed: float | None = None
+    subtitles: str | None = None
+    # Tied to the current video, cleared when playback stops.
+    up_next_video_id: str | None = None
+    up_next_title: str | None = None
 
     @property
     def thumbnail_url(self) -> str | None:
@@ -102,6 +115,13 @@ class TvState:
         if self.video_id is None:
             return None
         return THUMBNAIL_URL.format(video_id=self.video_id)
+
+    @property
+    def up_next_thumbnail_url(self) -> str | None:
+        """Return the thumbnail URL of the next video."""
+        if self.up_next_video_id is None:
+            return None
+        return THUMBNAIL_URL.format(video_id=self.up_next_video_id)
 
 
 class _Listener(EventListener):
@@ -127,6 +147,20 @@ class _Listener(EventListener):
 
     async def disconnected(self, event: DisconnectedEvent) -> None:
         self._coordinator.handle_disconnected()
+
+    async def autoplay_changed(self, event: AutoplayModeChangedEvent) -> None:
+        self._coordinator.handle_autoplay(event.enabled, event.supported)
+
+    async def autoplay_up_next_changed(self, event: AutoplayUpNextEvent) -> None:
+        self._coordinator.handle_up_next(event.video_id)
+
+    async def subtitles_track_changed(self, event: SubtitlesTrackEvent) -> None:
+        self._coordinator.handle_subtitles(
+            event.video_id, event.language_name or event.language_code
+        )
+
+    async def playback_speed_changed(self, event: PlaybackSpeedEvent) -> None:
+        self._coordinator.handle_playback_speed(event.playback_speed)
 
 
 class YouTubeOnTvCoordinator(DataUpdateCoordinator[TvState]):
@@ -320,7 +354,7 @@ class YouTubeOnTvCoordinator(DataUpdateCoordinator[TvState]):
             return
         self._app_running = running
         if not running:
-            self._update(TvState(), immediate=True)
+            self._update(self._cleared(PlayerStatus.OFF), immediate=True)
         elif self.api.connected():
             try:
                 await self.api.get_now_playing()
@@ -362,6 +396,7 @@ class YouTubeOnTvCoordinator(DataUpdateCoordinator[TvState]):
         self._app_running = True
         if event.video_id != self._state.video_id:
             title, channel = self._titles.get(event.video_id, (None, None))
+            up_next = self._state.up_next_video_id
             self._state = replace(
                 self._state,
                 video_id=event.video_id,
@@ -370,13 +405,14 @@ class YouTubeOnTvCoordinator(DataUpdateCoordinator[TvState]):
                 duration=None,
                 position=None,
                 position_updated_at=None,
+                # The queued video is now playing; the TV announces the next.
+                up_next_video_id=None if up_next == event.video_id else up_next,
+                up_next_title=(
+                    None if up_next == event.video_id else self._state.up_next_title
+                ),
             )
             if event.video_id not in self._titles:
-                self.config_entry.async_create_background_task(
-                    self.hass,
-                    self._async_fetch_title(event.video_id),
-                    f"{DOMAIN} title {event.video_id}",
-                )
+                self._async_request_title(event.video_id)
         self.handle_playback_state(event.state, event.current_time, event.duration)
 
     @callback
@@ -437,10 +473,55 @@ class YouTubeOnTvCoordinator(DataUpdateCoordinator[TvState]):
         self._update(new, immediate=True)
 
     @callback
+    def handle_autoplay(self, enabled: bool, supported: bool) -> None:
+        """Handle the autoplay setting being reported."""
+        new = replace(self._state, autoplay=enabled, autoplay_supported=supported)
+        if not supported:
+            # The TV reports autoplay as unsupported for a moment right after
+            # connecting, which would make the switch flicker to unavailable.
+            self._update(new, immediate=False)
+            return
+        self._update_setting(new)
+
+    @callback
+    def handle_up_next(self, video_id: str | None) -> None:
+        """Handle the video autoplay will play next."""
+        title = self._titles.get(video_id, (None, None))[0] if video_id else None
+        self._update_setting(
+            replace(self._state, up_next_video_id=video_id, up_next_title=title)
+        )
+        if video_id and video_id not in self._titles:
+            self._async_request_title(video_id)
+
+    @callback
+    def handle_subtitles(self, video_id: str | None, language: str | None) -> None:
+        """Handle a subtitles track change; no language means off."""
+        if video_id and self._state.video_id and video_id != self._state.video_id:
+            return
+        self._update_setting(replace(self._state, subtitles=language or SUBTITLES_OFF))
+
+    @callback
+    def handle_playback_speed(self, speed: float) -> None:
+        """Handle a playback speed change."""
+        self._update_setting(replace(self._state, playback_speed=speed))
+
+    @callback
+    def _update_setting(self, new: TvState) -> None:
+        """Store a setting change without disturbing a settling state.
+
+        Setting events arrive in bursts around seeks and ads; publishing them
+        at once would also publish a half-finished playback transition.
+        """
+        if self._unsub_settle is not None:
+            self._state = new
+        else:
+            self._update(new, immediate=True)
+
+    @callback
     def handle_disconnected(self) -> None:
         """Handle the TV ending the session (e.g. YouTube sent to background)."""
         LOGGER.debug("%s ended the lounge session", self.config_entry.title)
-        self._update(TvState(), immediate=True)
+        self._update(self._cleared(PlayerStatus.OFF), immediate=True)
 
     async def _async_check_stale(self, _now: datetime | None = None) -> None:
         """Detect a player that stopped without sending an event.
@@ -489,8 +570,18 @@ class YouTubeOnTvCoordinator(DataUpdateCoordinator[TvState]):
 
     def _idle_state(self) -> TvState:
         if self._app_running is False:
-            return TvState()
-        return TvState(status=PlayerStatus.IDLE)
+            return self._cleared(PlayerStatus.OFF)
+        return self._cleared(PlayerStatus.IDLE)
+
+    def _cleared(self, status: PlayerStatus) -> TvState:
+        """Return a state without a video, keeping the app's settings."""
+        return TvState(
+            status=status,
+            autoplay=self._state.autoplay,
+            autoplay_supported=self._state.autoplay_supported,
+            playback_speed=self._state.playback_speed,
+            subtitles=self._state.subtitles,
+        )
 
     @callback
     def _update(self, new: TvState, *, immediate: bool) -> None:
@@ -527,6 +618,14 @@ class YouTubeOnTvCoordinator(DataUpdateCoordinator[TvState]):
             self._unsub_settle()
             self._unsub_settle = None
 
+    @callback
+    def _async_request_title(self, video_id: str) -> None:
+        self.config_entry.async_create_background_task(
+            self.hass,
+            self._async_fetch_title(video_id),
+            f"{DOMAIN} title {video_id}",
+        )
+
     async def _async_fetch_title(self, video_id: str) -> None:
         """Look up the video title and channel with YouTube oEmbed."""
         session = async_get_clientsession(self.hass)
@@ -555,9 +654,14 @@ class YouTubeOnTvCoordinator(DataUpdateCoordinator[TvState]):
         if len(self._titles) >= MAX_TITLE_CACHE:
             self._titles.pop(next(iter(self._titles)))
         self._titles[video_id] = (title, channel)
-        if self._state.video_id != video_id:
+        new = self._state
+        if new.video_id == video_id:
+            new = replace(new, title=title, channel=channel)
+        if new.up_next_video_id == video_id:
+            new = replace(new, up_next_title=title)
+        if new == self._state:
             return
-        self._state = replace(self._state, title=title, channel=channel)
+        self._state = new
         if self._unsub_settle is None:
             self._publish()
 

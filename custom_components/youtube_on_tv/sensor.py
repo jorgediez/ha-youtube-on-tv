@@ -23,9 +23,14 @@ async def async_setup_entry(
 ) -> None:
     """Set up the sensors."""
     coordinator = entry.runtime_data
+    entities: list[SensorEntity] = [
+        YouTubeOnTvUpNextSensor(coordinator),
+        YouTubeOnTvSubtitlesSensor(coordinator),
+    ]
     # The app state comes from DIAL, unknown for TVs added with a TV code.
     if coordinator.has_app_state:
-        async_add_entities([YouTubeOnTvAppStateSensor(coordinator)])
+        entities.append(YouTubeOnTvAppStateSensor(coordinator))
+    async_add_entities(entities)
 
 
 class YouTubeOnTvAppStateSensor(YouTubeOnTvEntity, SensorEntity):
@@ -53,3 +58,44 @@ class YouTubeOnTvAppStateSensor(YouTubeOnTvEntity, SensorEntity):
         if state is None:
             return "unreachable"
         return state if state in APP_STATES else None
+
+
+class YouTubeOnTvUpNextSensor(YouTubeOnTvEntity, SensorEntity):
+    """The video autoplay will play next."""
+
+    _attr_translation_key = "up_next"
+
+    def __init__(self, coordinator: YouTubeOnTvCoordinator) -> None:
+        """Initialize the sensor."""
+        super().__init__(coordinator, "up_next")
+
+    @property
+    def native_value(self) -> str | None:
+        """Return the next video's title, or its id until the title is known."""
+        data = self.coordinator.data
+        return data.up_next_title or data.up_next_video_id
+
+    @property
+    def entity_picture(self) -> str | None:
+        """Return the next video's thumbnail."""
+        return self.coordinator.data.up_next_thumbnail_url
+
+    @property
+    def extra_state_attributes(self) -> dict[str, str | None]:
+        """Return the next video's id."""
+        return {"video_id": self.coordinator.data.up_next_video_id}
+
+
+class YouTubeOnTvSubtitlesSensor(YouTubeOnTvEntity, SensorEntity):
+    """Subtitles language of the current video, or "off"."""
+
+    _attr_translation_key = "subtitles"
+
+    def __init__(self, coordinator: YouTubeOnTvCoordinator) -> None:
+        """Initialize the sensor."""
+        super().__init__(coordinator, "subtitles")
+
+    @property
+    def native_value(self) -> str | None:
+        """Return the subtitles language."""
+        return self.coordinator.data.subtitles

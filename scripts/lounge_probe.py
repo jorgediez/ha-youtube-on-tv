@@ -21,11 +21,14 @@ import aiohttp
 from pyytlounge import (
     AdPlayingEvent,
     AdStateEvent,
+    AutoplayModeChangedEvent,
+    AutoplayUpNextEvent,
     DisconnectedEvent,
     EventListener,
     NowPlayingEvent,
     PlaybackSpeedEvent,
     PlaybackStateEvent,
+    SubtitlesTrackEvent,
     VolumeChangedEvent,
     YtLoungeApi,
 )
@@ -110,6 +113,16 @@ class PrintListener(EventListener):
 
     async def playback_speed_changed(self, event: PlaybackSpeedEvent) -> None:
         log(f"SPEED        {vars(event)}")
+
+    async def autoplay_changed(self, event: AutoplayModeChangedEvent) -> None:
+        log(f"AUTOPLAY     enabled={event.enabled} supported={event.supported}")
+
+    async def autoplay_up_next_changed(self, event: AutoplayUpNextEvent) -> None:
+        title = await self._titles.get(event.video_id) if event.video_id else "-"
+        log(f"UP NEXT      video={event.video_id}  {title}")
+
+    async def subtitles_track_changed(self, event: SubtitlesTrackEvent) -> None:
+        log(f"SUBTITLES    {vars(event)}")
 
     async def disconnected(self, event: DisconnectedEvent) -> None:
         log(f"DISCONNECTED {vars(event)}")

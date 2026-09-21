@@ -158,6 +158,10 @@ async def test_one_device_per_tv(
                 "binary_sensor.youtube_on_samsung_neo_qled_connectivity",
                 "button.youtube_on_samsung_neo_qled_skip_ad",
                 "sensor.youtube_on_samsung_neo_qled_app_state",
+                "sensor.youtube_on_samsung_neo_qled_up_next",
+                "sensor.youtube_on_samsung_neo_qled_subtitles",
+                "switch.youtube_on_samsung_neo_qled_autoplay",
+                "select.youtube_on_samsung_neo_qled_playback_speed",
             },
         ),
         bedroom: (
@@ -169,6 +173,10 @@ async def test_one_device_per_tv(
                 "binary_sensor.youtube_on_bedroom_tv_connectivity",
                 "button.youtube_on_bedroom_tv_skip_ad",
                 "sensor.youtube_on_bedroom_tv_app_state",
+                "sensor.youtube_on_bedroom_tv_up_next",
+                "sensor.youtube_on_bedroom_tv_subtitles",
+                "switch.youtube_on_bedroom_tv_autoplay",
+                "select.youtube_on_bedroom_tv_playback_speed",
             },
         ),
     }
