@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from unittest.mock import AsyncMock
 
 import aiohttp
@@ -122,7 +124,10 @@ async def test_diagnostics(
         "screen_device_name": "Samsung TQ75QN900FTXXC",
     }
     assert diagnostics["dial"] == {"polled": True, "app_state": "running"}
-    assert diagnostics["versions"]["integration"] == "0.1.0"
+    manifest = json.loads(
+        Path("custom_components/youtube_on_tv/manifest.json").read_text()
+    )
+    assert diagnostics["versions"]["integration"] == manifest["version"]
     assert diagnostics["state"]["status"] == "off"
     assert diagnostics["pending_state"]["status"] == "off"
     assert SCREEN_ID not in str(diagnostics)
