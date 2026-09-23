@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import html
 import re
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
 import aiohttp
 
@@ -24,6 +24,8 @@ KNOWN_DESCRIPTION_URLS = (
 )
 
 # YouTube app URLs of common DIAL servers, the last resort (no TV name).
+ORIGIN = "https://www.youtube.com"
+
 KNOWN_APP_URLS = (
     "http://{host}:8080/ws/app/YouTube",  # Samsung Tizen
     "http://{host}:8008/apps/YouTube",  # Chromecast, Google/Android TV
@@ -83,6 +85,61 @@ async def async_get_app_state(hass: HomeAssistant, app_url: str) -> str | None:
         return None
     state = _tag(await response.text(), "state")
     return state.lower() if state else None
+
+
+async def async_launch_app(
+    hass: HomeAssistant, app_url: str, video_id: str | None = None
+) -> str | None:
+    """Open the YouTube app on the TV, optionally playing a video.
+
+    The TV may ask the viewer to allow the remote device the first time.
+    Returns the URL of the running app, used to stop it again.
+    """
+    data = {"v": video_id, "t": "0"} if video_id else None
+    session = async_get_clientsession(hass)
+    try:
+        response = await session.post(
+            app_url,
+            data=data,
+            headers={"Origin": ORIGIN},
+            timeout=aiohttp.ClientTimeout(total=DIAL_TIMEOUT),
+        )
+        await response.read()
+    except (aiohttp.ClientError, TimeoutError) as err:
+        raise DialConnectionError(f"Error launching {app_url}: {err}") from err
+    if response.status not in (200, 201):
+        raise DialError(f"{app_url} returned HTTP {response.status} on launch")
+    return response.headers.get("LOCATION")
+
+
+async def async_stop_app(hass: HomeAssistant, run_url: str) -> None:
+    """Close the YouTube app on the TV."""
+    session = async_get_clientsession(hass)
+    try:
+        response = await session.delete(
+            run_url,
+            headers={"Origin": ORIGIN},
+            timeout=aiohttp.ClientTimeout(total=DIAL_TIMEOUT),
+        )
+        await response.read()
+    except (aiohttp.ClientError, TimeoutError) as err:
+        raise DialConnectionError(f"Error stopping {run_url}: {err}") from err
+    if response.status not in (200, 204):
+        raise DialError(f"{run_url} returned HTTP {response.status} on stop")
+
+
+async def async_get_run_url(hass: HomeAssistant, app_url: str) -> str | None:
+    """Return the URL of the running app, as the TV reports it."""
+    try:
+        response = await _get(async_get_clientsession(hass), app_url)
+    except DialConnectionError:
+        return None
+    if response.status != 200:
+        return None
+    match = re.search(r'<link[^>]*rel="run"[^>]*href="([^"]+)"', await response.text())
+    if not match:
+        return None
+    return urljoin(f"{app_url}/", match.group(1))
 
 
 async def _async_screen_from_app_url(

@@ -155,7 +155,7 @@ async def test_one_device_per_tv(
             {
                 "media_player.youtube_on_samsung_neo_qled",
                 "binary_sensor.youtube_on_samsung_neo_qled_ad_playing",
-                "binary_sensor.youtube_on_samsung_neo_qled_connectivity",
+                "binary_sensor.youtube_on_samsung_neo_qled_youtube_session",
                 "button.youtube_on_samsung_neo_qled_skip_ad",
                 "sensor.youtube_on_samsung_neo_qled_app_state",
                 "sensor.youtube_on_samsung_neo_qled_up_next",
@@ -172,7 +172,7 @@ async def test_one_device_per_tv(
             {
                 "media_player.youtube_on_bedroom_tv",
                 "binary_sensor.youtube_on_bedroom_tv_ad_playing",
-                "binary_sensor.youtube_on_bedroom_tv_connectivity",
+                "binary_sensor.youtube_on_bedroom_tv_youtube_session",
                 "button.youtube_on_bedroom_tv_skip_ad",
                 "sensor.youtube_on_bedroom_tv_app_state",
                 "sensor.youtube_on_bedroom_tv_up_next",

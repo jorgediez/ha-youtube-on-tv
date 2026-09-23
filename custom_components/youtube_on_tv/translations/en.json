@@ -69,6 +69,12 @@
     },
     "no_video": {
       "message": "No video is playing on the TV."
+    },
+    "launch_failed": {
+      "message": "Failed to open YouTube on the TV: {error}"
+    },
+    "stop_failed": {
+      "message": "Failed to close YouTube on the TV: {error}"
     }
   },
   "device": {
@@ -89,6 +95,9 @@
             }
           }
         }
+      },
+      "session": {
+        "name": "YouTube session"
       }
     },
     "button": {

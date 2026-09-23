@@ -57,7 +57,13 @@ from .const import (
     STALE_CHECK_INTERVAL,
     STALE_REPLY_TIMEOUT,
 )
-from .dial import async_get_app_state
+from .dial import (
+    DialError,
+    async_get_app_state,
+    async_get_run_url,
+    async_launch_app,
+    async_stop_app,
+)
 
 if TYPE_CHECKING:
     from . import YouTubeOnTvConfigEntry
@@ -221,6 +227,11 @@ class YouTubeOnTvCoordinator(DataUpdateCoordinator[TvState]):
         self._last_event_at: datetime | None = None
         self._stale_asked_at: datetime | None = None
         self._unsub_stale_reply: CALLBACK_TYPE | None = None
+
+    @property
+    def app_running(self) -> bool | None:
+        """Return whether YouTube runs on the TV, None if not known."""
+        return self._app_running
 
     @property
     def has_app_state(self) -> bool:
@@ -390,6 +401,41 @@ class YouTubeOnTvCoordinator(DataUpdateCoordinator[TvState]):
             self._update(replace(self._state, status=PlayerStatus.IDLE), immediate=True)
 
     # Commands
+
+    async def async_launch(self, video_id: str | None = None) -> None:
+        """Open YouTube on the TV, optionally playing a video."""
+        assert self._app_url is not None
+        try:
+            await async_launch_app(self.hass, self._app_url, video_id)
+        except DialError as err:
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key="launch_failed",
+                translation_placeholders={"error": str(err)},
+            ) from err
+        await self._async_check_app_state()
+
+    async def async_stop(self) -> None:
+        """Close YouTube on the TV."""
+        assert self._app_url is not None
+        run_url = await async_get_run_url(self.hass, self._app_url)
+        if run_url is None:
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key="launch_failed",
+                translation_placeholders={
+                    "error": "the TV didn't report a running app"
+                },
+            )
+        try:
+            await async_stop_app(self.hass, run_url)
+        except DialError as err:
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key="stop_failed",
+                translation_placeholders={"error": str(err)},
+            ) from err
+        await self._async_check_app_state()
 
     async def async_command(
         self, command: Callable[..., Awaitable[bool]], *args: Any

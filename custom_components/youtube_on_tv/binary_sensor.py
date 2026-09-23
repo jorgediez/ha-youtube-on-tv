@@ -53,9 +53,13 @@ class YouTubeOnTvAdPlayingSensor(YouTubeOnTvEntity, BinarySensorEntity):
 
 
 class YouTubeOnTvConnectedSensor(YouTubeOnTvEntity, BinarySensorEntity):
-    """On while the Lounge session with YouTube is up."""
+    """On while the session with YouTube's servers is up.
+
+    This is not a connection to the TV: it stays up while the TV is off.
+    """
 
     _attr_device_class = BinarySensorDeviceClass.CONNECTIVITY
+    _attr_translation_key = "session"
     _attr_entity_category = EntityCategory.DIAGNOSTIC
 
     def __init__(self, coordinator: YouTubeOnTvCoordinator) -> None:

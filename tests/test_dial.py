@@ -12,10 +12,14 @@ from pytest_homeassistant_custom_component.test_util.aiohttp import (
 
 from custom_components.youtube_on_tv.dial import (
     DialConnectionError,
+    DialError,
     DialNoScreenError,
     async_get_app_state,
+    async_get_run_url,
     async_get_screen_from_host,
     async_get_screen_from_location,
+    async_launch_app,
+    async_stop_app,
 )
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.service_info.ssdp import SsdpServiceInfo
@@ -40,6 +44,7 @@ APP_INFO = f"""<?xml version="1.0" encoding="UTF-8"?>
   <name>YouTube</name>
   <options allowStop="true"/>
   <state>running</state>
+  <link rel="run" href="run"/>
   <additionalData>
     <screenId>{SCREEN_ID}</screenId>
   </additionalData>
@@ -212,3 +217,66 @@ async def test_app_state(
     """The app state is read, or None when unknown."""
     aioclient_mock.get(APP_URL, **kwargs)
     assert await async_get_app_state(hass, APP_URL) == expected
+
+
+async def test_launch_app(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
+) -> None:
+    """Launching returns the URL of the running app."""
+    run_url = f"http://{HOST}:8080/ws/apps/YouTube/run"
+    aioclient_mock.post(APP_URL, text="", headers={"LOCATION": run_url})
+    assert await async_launch_app(hass, APP_URL, "Yeke1krzPFM") == run_url
+    method, _url, data, _headers = aioclient_mock.mock_calls[-1]
+    assert method == "POST"
+    assert data == {"v": "Yeke1krzPFM", "t": "0"}
+
+    aioclient_mock.clear_requests()
+    aioclient_mock.post(APP_URL, text="")
+    assert await async_launch_app(hass, APP_URL) is None
+    assert aioclient_mock.mock_calls[-1][2] is None
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "error"),
+    [
+        ({"status": 403}, DialError),
+        ({"exc": TimeoutError}, DialConnectionError),
+    ],
+)
+async def test_launch_app_errors(
+    hass: HomeAssistant,
+    aioclient_mock: AiohttpClientMocker,
+    kwargs: dict,
+    error: type[Exception],
+) -> None:
+    """A TV that refuses the launch is reported."""
+    aioclient_mock.post(APP_URL, **kwargs)
+    with pytest.raises(error):
+        await async_launch_app(hass, APP_URL)
+
+
+async def test_stop_app(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
+) -> None:
+    """Stopping deletes the running app."""
+    run_url = f"{APP_URL}/run"
+    aioclient_mock.delete(run_url, status=200)
+    await async_stop_app(hass, run_url)
+    assert aioclient_mock.mock_calls[-1][0] == "DELETE"
+
+    aioclient_mock.clear_requests()
+    aioclient_mock.delete(run_url, status=404)
+    with pytest.raises(DialError):
+        await async_stop_app(hass, run_url)
+
+
+async def test_get_run_url(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
+) -> None:
+    """The running app's URL comes from the TV's own link."""
+    aioclient_mock.get(APP_URL, text=APP_INFO)
+    assert await async_get_run_url(hass, APP_URL) == f"{APP_URL}/run"
+
+    aioclient_mock.clear_requests()
+    aioclient_mock.get(APP_URL, text=APP_INFO_NO_SCREEN)
+    assert await async_get_run_url(hass, APP_URL) is None

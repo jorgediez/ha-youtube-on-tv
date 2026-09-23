@@ -65,6 +65,12 @@ class YouTubeOnTvMediaPlayer(YouTubeOnTvEntity, MediaPlayerEntity):
     def __init__(self, coordinator: YouTubeOnTvCoordinator) -> None:
         """Initialize the media player."""
         super().__init__(coordinator, "media_player")
+        if coordinator.has_app_state:
+            # Opening and closing the app is done over DIAL, so it needs the
+            # TV's address, which a TV added with a code doesn't have.
+            self._attr_supported_features |= (
+                MediaPlayerEntityFeature.TURN_ON | MediaPlayerEntityFeature.TURN_OFF
+            )
 
     @property
     def state(self) -> MediaPlayerState:
@@ -139,7 +145,20 @@ class YouTubeOnTvMediaPlayer(YouTubeOnTvEntity, MediaPlayerEntity):
                 translation_key="invalid_video",
                 translation_placeholders={"media_id": media_id},
             )
+        if self.coordinator.app_running is False:
+            # YouTube isn't open: a Lounge command would be accepted by
+            # YouTube's servers and never reach the TV, so open the app on it.
+            await self.coordinator.async_launch(video_id)
+            return
         await self.coordinator.async_command(self.coordinator.api.play_video, video_id)
+
+    async def async_turn_on(self) -> None:
+        """Open YouTube on the TV."""
+        await self.coordinator.async_launch()
+
+    async def async_turn_off(self) -> None:
+        """Close YouTube on the TV."""
+        await self.coordinator.async_stop()
 
 
 def parse_video_id(media_id: str) -> str | None:

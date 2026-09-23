@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import timedelta
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 from freezegun.api import FrozenDateTimeFactory
 import pytest
@@ -25,16 +25,24 @@ from homeassistant.components.media_player import (
     ATTR_MEDIA_CONTENT_TYPE,
     DOMAIN as MP_DOMAIN,
     SERVICE_PLAY_MEDIA,
+    MediaPlayerEntityFeature,
 )
-from homeassistant.const import ATTR_ENTITY_ID, STATE_OFF, STATE_ON, STATE_UNAVAILABLE
+from homeassistant.const import (
+    ATTR_ENTITY_ID,
+    SERVICE_TURN_OFF,
+    SERVICE_TURN_ON,
+    STATE_OFF,
+    STATE_ON,
+    STATE_UNAVAILABLE,
+)
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import ServiceValidationError
+from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import entity_registry as er
 
-from .conftest import SCREEN_ID, FakeLounge, wait_for
+from .conftest import APP_URL, SCREEN_ID, FakeLounge, wait_for
 
 PREFIX = "youtube_on_samsung_neo_qled"
-CONNECTED_ID = f"binary_sensor.{PREFIX}_connectivity"
+CONNECTED_ID = f"binary_sensor.{PREFIX}_youtube_session"
 APP_STATE_ID = f"sensor.{PREFIX}_app_state"
 SKIP_AD_ID = f"button.{PREFIX}_skip_ad"
 PLAYER_ID = f"media_player.{PREFIX}"
@@ -219,3 +227,96 @@ async def test_unchanged_app_state_does_not_write(
         async_fire_time_changed(hass)
         await hass.async_block_till_done()
     assert hass.states.get(PLAYER_ID).last_updated == before
+
+
+async def test_turn_on_and_off(
+    hass: HomeAssistant, init_integration: FakeLounge
+) -> None:
+    """Turning the player on and off opens and closes YouTube over DIAL."""
+    state = hass.states.get(PLAYER_ID)
+    features = state.attributes["supported_features"]
+    assert features & MediaPlayerEntityFeature.TURN_ON
+    assert features & MediaPlayerEntityFeature.TURN_OFF
+
+    module = "custom_components.youtube_on_tv.coordinator"
+    with patch(f"{module}.async_launch_app") as launch:
+        await hass.services.async_call(
+            MP_DOMAIN, SERVICE_TURN_ON, {ATTR_ENTITY_ID: PLAYER_ID}, blocking=True
+        )
+    launch.assert_awaited_once_with(hass, APP_URL, None)
+
+    with (
+        patch(f"{module}.async_get_run_url", return_value=f"{APP_URL}/run") as run_url,
+        patch(f"{module}.async_stop_app") as stop,
+    ):
+        await hass.services.async_call(
+            MP_DOMAIN, SERVICE_TURN_OFF, {ATTR_ENTITY_ID: PLAYER_ID}, blocking=True
+        )
+    run_url.assert_awaited_once()
+    stop.assert_awaited_once_with(hass, f"{APP_URL}/run")
+
+
+async def test_turn_off_without_running_app(
+    hass: HomeAssistant, init_integration: FakeLounge
+) -> None:
+    """Closing an app the TV doesn't report as running fails clearly."""
+    module = "custom_components.youtube_on_tv.coordinator"
+    with (
+        patch(f"{module}.async_get_run_url", return_value=None),
+        pytest.raises(HomeAssistantError) as err,
+    ):
+        await hass.services.async_call(
+            MP_DOMAIN, SERVICE_TURN_OFF, {ATTR_ENTITY_ID: PLAYER_ID}, blocking=True
+        )
+    assert err.value.translation_key == "launch_failed"
+
+
+async def test_play_media_launches_closed_app(
+    hass: HomeAssistant,
+    init_integration: FakeLounge,
+    mock_app_state: AsyncMock,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """With YouTube closed, the video is sent with the launch request."""
+    mock_app_state.return_value = "stopped"
+    freezer.tick(APP_STATE_INTERVAL)
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+
+    module = "custom_components.youtube_on_tv.coordinator"
+    with patch(f"{module}.async_launch_app") as launch:
+        await hass.services.async_call(
+            MP_DOMAIN,
+            SERVICE_PLAY_MEDIA,
+            {
+                ATTR_ENTITY_ID: PLAYER_ID,
+                ATTR_MEDIA_CONTENT_ID: VIDEO_ID,
+                ATTR_MEDIA_CONTENT_TYPE: "video",
+            },
+            blocking=True,
+        )
+    launch.assert_awaited_once_with(hass, APP_URL, VIDEO_ID)
+    init_integration.play_video.assert_not_awaited()
+
+
+async def test_no_turn_on_without_dial(
+    hass: HomeAssistant,
+    mock_lounge: list[FakeLounge],
+    mock_app_state: AsyncMock,
+) -> None:
+    """A TV added with a code has no address to launch the app on."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="Kitchen TV",
+        unique_id="kitchen2",
+        data={CONF_SCREEN_ID: SCREEN_ID},
+    )
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    features = hass.states.get("media_player.youtube_on_kitchen_tv").attributes[
+        "supported_features"
+    ]
+    assert not features & MediaPlayerEntityFeature.TURN_ON
+    assert not features & MediaPlayerEntityFeature.TURN_OFF
