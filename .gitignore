@@ -8,3 +8,4 @@ htmlcov/
 config/
 .vscode/
 .idea/
+tmp/
