@@ -8,3 +8,6 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    ignore:
+      # Mirrors the version Home Assistant pins, not the latest release.
+      - dependency-name: async-upnp-client
