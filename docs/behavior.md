@@ -31,6 +31,14 @@ The **Skip ad** button does what pressing skip on the remote does: it works once
 - If the TV was added by discovery or IP address, the integration also asks it every 30 seconds whether YouTube is running. That catches the app closing or the TV turning off, which the session doesn't always report.
 - A command sent while YouTube is closed is accepted by YouTube's servers and never reaches the TV, which is why playing a video opens the app instead.
 
+## Queue
+
+- The queue commands (`addVideo`, `insertVideo`, `setPlaylist`) are the ones the YouTube phone app sends. There is no command to move or remove one video, so reordering and deleting send the whole queue again with the playing video and its position; the TV carries on without a visible gap.
+- The TV reports the queue in its now playing updates, but not the position in it, so a video queued twice is matched by the position it had last.
+- After a change from Home Assistant the TV keeps reporting the old queue for a few seconds. Reports that don't match the change are ignored for up to 5 seconds, so the list doesn't jump back and forth.
+- A video can play with no queue reported, for example after the session dropped and came back. Adding a video or playing one next still goes to the TV's own queue, and the integration asks the TV for it, so the playing video isn't replaced.
+- Queue titles are looked up four at a time, nearest to the playing video first. A video oEmbed doesn't know (private or removed) shows its id; a lookup that failed for another reason is tried again on the next queue report.
+
 ## Settings
 
 - Autoplay, playback speed and subtitles are known only once the TV reports them, so they show as unknown until then. The TV reports them when they change, so they're kept across videos and while playback is stopped. Up next belongs to the current video and is cleared with it.

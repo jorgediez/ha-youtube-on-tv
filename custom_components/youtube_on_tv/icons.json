@@ -66,6 +66,11 @@
       "playback_speed": {
         "default": "mdi:play-speed"
       }
+    },
+    "todo": {
+      "queue": {
+        "default": "mdi:playlist-play"
+      }
     }
   }
 }

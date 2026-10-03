@@ -62,6 +62,37 @@ It works while YouTube is open, including switching from a video that's already 
 
 Turning the media player on or off opens and closes YouTube on the TV the same way. Both need the TV's address, so they aren't available for TVs added with a TV code.
 
+## Queue videos
+
+`media_player.play_media` takes Home Assistant's standard `enqueue` option:
+
+| `enqueue` | Effect |
+|---|---|
+| `add` | Appends the video to the end of the queue |
+| `next` | Plays the video after the current one |
+| `replace` | Replaces the whole queue with the video |
+| `play` or none | Plays the video now |
+
+```yaml
+action: media_player.play_media
+target:
+  entity_id: media_player.youtube_on_samsung_neo_qled
+data:
+  media_content_type: video
+  media_content_id: https://youtu.be/dQw4w9WgXcQ
+  enqueue: next
+```
+
+With nothing playing, `add` and `next` play the video now.
+
+The **Queue** to-do list shows the same queue, including videos queued from a phone. Played videos show as completed. In the list:
+
+- **Add** a YouTube link or video id to append it (or play it, if nothing plays).
+- **Drag** a video to reorder the queue. The playing video keeps playing.
+- **Delete** a video to remove it from the queue.
+
+The playing video can't be moved or deleted, and a video dragged above it plays next instead. Reordering and deleting need a video playing, because the TV reloads the queue at the current position.
+
 ## Taking a Shorts break
 
 The TV won't play Shorts while Home Assistant is connected to it; see [Shorts](behavior.md#shorts). The **Remote session** switch disconnects on demand.

@@ -75,6 +75,12 @@
     },
     "stop_failed": {
       "message": "Failed to close YouTube on the TV: {error}"
+    },
+    "queue_playing_video": {
+      "message": "The playing video can't be moved or removed. Skip it on the TV first."
+    },
+    "queue_changed": {
+      "message": "The queue changed on the TV. Try again."
     }
   },
   "device": {
@@ -149,6 +155,11 @@
           "1_75": "1.75×",
           "2": "2×"
         }
+      }
+    },
+    "todo": {
+      "queue": {
+        "name": "Queue"
       }
     }
   }

@@ -18,6 +18,7 @@ Questions, ideas and reports of how it behaves on other TVs are welcome in the [
 Each TV becomes a device with:
 
 - **Media player** — state, video, title, channel, thumbnail, duration and position; play, pause, seek, next, previous, turn on/off, and playing any video by id or YouTube URL
+- **Queue** to-do list mirroring the TV's play queue: paste a link to add a video, drag to reorder, delete to remove; the media player can also add to the end, play next or replace the queue
 - **Ad playing** sensor and **Skip ad** button, for muting or skipping ads automatically
 - **Autoplay**, **Subtitles** and **Remote session** switches, and a **Playback speed** select
 - **Up next**, **Subtitles** and **Video quality** sensors

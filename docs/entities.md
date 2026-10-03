@@ -6,7 +6,8 @@ Each TV becomes its own device, named **YouTube on _TV name_**, so it's easy to 
 
 | Entity | Description |
 |---|---|
-| `media_player.youtube_on_samsung_neo_qled` | What's playing: state, video id, title, channel, thumbnail, duration and position. Supports play, pause, seek, next, previous, turn on/off and playing a video. |
+| `media_player.youtube_on_samsung_neo_qled` | What's playing: state, video id, title, channel, thumbnail, duration and position. Supports play, pause, seek, next, previous, turn on/off, and playing or queueing a video. |
+| `todo.youtube_on_samsung_neo_qled_queue` | The TV's play queue, in order. Played videos show as completed, the playing one says "Now playing". Add a link to queue it, drag to reorder, delete to remove; see [Queue videos](automations.md#queue-videos). |
 | `sensor.youtube_on_samsung_neo_qled_video_quality` | Resolution being played, e.g. 1080, with an `available_levels` attribute |
 | `sensor.youtube_on_samsung_neo_qled_up_next` | Title of the video autoplay plays next, with its `video_id` and thumbnail. Only set when the TV announces one, which some TVs rarely do. |
 

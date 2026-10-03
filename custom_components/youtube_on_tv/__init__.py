@@ -15,6 +15,7 @@ PLATFORMS: list[Platform] = [
     Platform.SELECT,
     Platform.SENSOR,
     Platform.SWITCH,
+    Platform.TODO,
 ]
 
 type YouTubeOnTvConfigEntry = ConfigEntry[YouTubeOnTvCoordinator]
