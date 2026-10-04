@@ -8,7 +8,9 @@ from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 from homeassistant.components.media_player import (
+    ATTR_MEDIA_ENQUEUE,
     MediaPlayerDeviceClass,
+    MediaPlayerEnqueue,
     MediaPlayerEntity,
     MediaPlayerEntityFeature,
     MediaPlayerState,
@@ -60,6 +62,7 @@ class YouTubeOnTvMediaPlayer(YouTubeOnTvEntity, MediaPlayerEntity):
         | MediaPlayerEntityFeature.NEXT_TRACK
         | MediaPlayerEntityFeature.PREVIOUS_TRACK
         | MediaPlayerEntityFeature.PLAY_MEDIA
+        | MediaPlayerEntityFeature.MEDIA_ENQUEUE
     )
 
     def __init__(self, coordinator: YouTubeOnTvCoordinator) -> None:
@@ -137,7 +140,11 @@ class YouTubeOnTvMediaPlayer(YouTubeOnTvEntity, MediaPlayerEntity):
     async def async_play_media(
         self, media_type: str, media_id: str, **kwargs: Any
     ) -> None:
-        """Play a YouTube video, given its id or URL."""
+        """Play or queue a YouTube video, given its id or URL.
+
+        enqueue "add" appends it to the queue, "next" plays it after the
+        current video, "replace" clears the queue; "play" or none plays it now.
+        """
         video_id = parse_video_id(media_id)
         if video_id is None:
             raise ServiceValidationError(
@@ -150,7 +157,17 @@ class YouTubeOnTvMediaPlayer(YouTubeOnTvEntity, MediaPlayerEntity):
             # YouTube's servers and never reach the TV, so open the app on it.
             await self.coordinator.async_launch(video_id)
             return
-        await self.coordinator.async_command(self.coordinator.api.play_video, video_id)
+        enqueue = kwargs.get(ATTR_MEDIA_ENQUEUE)
+        if enqueue == MediaPlayerEnqueue.ADD:
+            await self.coordinator.async_queue_add(video_id)
+        elif enqueue == MediaPlayerEnqueue.NEXT:
+            await self.coordinator.async_queue_next(video_id)
+        elif enqueue == MediaPlayerEnqueue.REPLACE:
+            await self.coordinator.async_queue_replace([video_id])
+        else:
+            await self.coordinator.async_command(
+                self.coordinator.api.play_video, video_id
+            )
 
     async def async_turn_on(self) -> None:
         """Open YouTube on the TV."""
