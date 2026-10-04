@@ -27,6 +27,7 @@ The **Skip ad** button does what pressing skip on the remote does: it works once
 
 - While an ad plays, the position and duration are hidden, because the TV reports the ad's rather than the video's.
 - Titles and channel names come from YouTube's public oEmbed endpoint, so no API key is needed.
+- The TV may show its "Who's watching?" profile picker when Home Assistant links to it, which happens when the integration starts and again whenever YouTube expires the session token. So a restart can put the picker on the TV, interrupting what's playing. Nothing is wrong; pick a profile and playback carries on.
 - The TV sends nothing when YouTube drops to its "Who's watching?" or home screen mid-video. To catch that, the integration asks the TV what's playing once a minute while a video plays, and the player goes `idle` within about 70 seconds if there's no answer. It also goes `idle` if the position runs more than 30 seconds past the end of the video.
 - If the TV was added by discovery or IP address, the integration also asks it every 30 seconds whether YouTube is running. That catches the app closing or the TV turning off, which the session doesn't always report.
 - A command sent while YouTube is closed is accepted by YouTube's servers and never reaches the TV, which is why playing a video opens the app instead.
