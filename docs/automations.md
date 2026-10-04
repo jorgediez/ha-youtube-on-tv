@@ -60,7 +60,24 @@ data:
 
 It works while YouTube is open, including switching from a video that's already playing. If YouTube is closed, the integration opens it on the TV with that video. **The first time a device does that, the TV asks you to allow it**, so confirm on the TV once.
 
-Turning the media player on or off opens and closes YouTube on the TV the same way. Both need the TV's address, so they aren't available for TVs added with a TV code.
+Turning the media player on or off opens and closes YouTube on the TV the same way. Both need the TV's address, so a TV added with a TV code needs [open actions](#open-youtube-on-a-tv-added-with-a-code) instead.
+
+### Open YouTube on a TV added with a code
+
+The Lounge protocol can't start the app, and a TV added with a code has no address for DIAL. Give it **open actions** instead: *Settings > Devices & services > YouTube on TV*, the TV's entry, **Configure**. They're ordinary actions (script syntax), for example for an Apple TV:
+
+```yaml
+- action: media_player.turn_on
+  target:
+    entity_id: media_player.living_room_apple_tv
+- action: media_player.select_source
+  target:
+    entity_id: media_player.living_room_apple_tv
+  data:
+    source: YouTube
+```
+
+When the TV's YouTube app is offline (the player shows `off`: the app closed or went to the background), the actions run before `play_media` (any `enqueue` mode). The integration then waits up to 45 seconds for the app's Lounge session to come back, and fails the call if it doesn't. With open actions set, the player also gets **turn on**, which runs them. Calling a script works too (`action: script.my_open_youtube`). There is no turn off: closing the app needs DIAL.
 
 ## Queue videos
 

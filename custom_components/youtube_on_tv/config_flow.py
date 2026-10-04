@@ -12,14 +12,24 @@ import aiohttp
 from pyytlounge import YtLoungeApi
 import voluptuous as vol
 
-from homeassistant.config_entries import SOURCE_REAUTH, ConfigFlow, ConfigFlowResult
+from homeassistant.config_entries import (
+    SOURCE_REAUTH,
+    ConfigEntry,
+    ConfigFlow,
+    ConfigFlowResult,
+    OptionsFlow,
+)
 from homeassistant.const import CONF_HOST
+from homeassistant.core import callback
+from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers.selector import ActionSelector
 from homeassistant.helpers.service_info.ssdp import SsdpServiceInfo
 
 from .const import (
     CONF_APP_URL,
     CONF_MANUFACTURER,
     CONF_MODEL,
+    CONF_OPEN_ACTIONS,
     CONF_PAIRING_CODE,
     CONF_SCREEN_ID,
     DOMAIN,
@@ -73,6 +83,18 @@ class YouTubeOnTvConfigFlow(ConfigFlow, domain=DOMAIN):
 
     VERSION = 1
     MINOR_VERSION = 1
+
+    @staticmethod
+    @callback
+    def async_get_options_flow(config_entry: ConfigEntry) -> TvOptionsFlow:
+        """Return the options flow of a TV added with a code."""
+        return TvOptionsFlow()
+
+    @classmethod
+    @callback
+    def async_supports_options_flow(cls, config_entry: ConfigEntry) -> bool:
+        """Offer options only for TVs added with a code: they have no DIAL."""
+        return CONF_APP_URL not in config_entry.data
 
     def __init__(self) -> None:
         """Initialize the flow."""
@@ -247,4 +269,41 @@ class YouTubeOnTvConfigFlow(ConfigFlow, domain=DOMAIN):
         # entry's unique id is kept rather than compared.
         return self.async_update_reload_and_abort(
             self._get_reauth_entry(), data_updates=data
+        )
+
+
+class TvOptionsFlow(OptionsFlow):
+    """How to open YouTube on a TV added with a code.
+
+    The Lounge protocol can't start the app, and such a TV has no DIAL
+    address. The actions run before playing a video or turning on when the
+    TV's Lounge screen is offline, e.g. wake a streaming box and select the
+    YouTube app on it.
+    """
+
+    async def async_step_init(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Show the open actions."""
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            actions = user_input.get(CONF_OPEN_ACTIONS) or []
+            try:
+                cv.SCRIPT_SCHEMA(actions)
+            except vol.Invalid:
+                errors[CONF_OPEN_ACTIONS] = "invalid_actions"
+            else:
+                return self.async_create_entry(data={CONF_OPEN_ACTIONS: actions})
+        current = self.config_entry.options.get(CONF_OPEN_ACTIONS) or []
+        return self.async_show_form(
+            step_id="init",
+            data_schema=vol.Schema(
+                {
+                    vol.Optional(
+                        CONF_OPEN_ACTIONS,
+                        description={"suggested_value": current},
+                    ): ActionSelector()
+                }
+            ),
+            errors=errors,
         )
