@@ -30,14 +30,18 @@ async def test_setup_and_unload(
     init_integration: FakeLounge,
     mock_config_entry: MockConfigEntry,
 ) -> None:
-    """Unloading disconnects from the TV and stops listening."""
+    """Unloading stops listening, leaving the TV playing.
+
+    No disconnect is sent: that tells the TV the user stopped casting, which
+    stops playback and drops the queue (seen on a Samsung Tizen TV).
+    """
     assert mock_config_entry.state is ConfigEntryState.LOADED
 
     assert await hass.config_entries.async_unload(mock_config_entry.entry_id)
     await hass.async_block_till_done()
 
     assert mock_config_entry.state is ConfigEntryState.NOT_LOADED
-    init_integration.disconnect.assert_awaited_once()
+    init_integration.disconnect.assert_not_awaited()
     init_integration.close.assert_awaited_once()
 
 

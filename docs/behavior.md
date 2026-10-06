@@ -17,7 +17,7 @@ The TV pushes everything the integration knows, over YouTube's Lounge protocol. 
 
 The TV won't play Shorts while any device is connected to it as a remote — a phone that's casting does the same thing. Since this integration stays connected, the TV says Shorts can't play while a device is connected, and its own disconnect button doesn't help, because the integration reconnects right away.
 
-Turn off the **Remote session** switch to watch Shorts, and on again afterwards. While it's off, the TV sees no connected device, the other entities are unavailable, and the setting survives a restart. See [taking a Shorts break](automations.md#taking-a-shorts-break).
+Turn off the **Remote session** switch to watch Shorts, and on again afterwards. While it's off, the TV sees no connected device, the other entities are unavailable, and the setting survives a restart. Turning it off stops whatever is playing, as stopping casting from the phone app does. See [taking a Shorts break](automations.md#taking-a-shorts-break).
 
 ## Ads
 
@@ -31,6 +31,7 @@ The **Skip ad** button does what pressing skip on the remote does: it works once
 - The TV sends nothing when YouTube drops to its "Who's watching?" or home screen mid-video. To catch that, the integration asks the TV what's playing once a minute while a video plays, and the player goes `idle` within about 70 seconds if there's no answer. It also goes `idle` if the position runs more than 30 seconds past the end of the video.
 - If the TV was added by discovery or IP address, the integration also asks it every 30 seconds whether YouTube is running. That catches the app closing or the TV turning off, which the session doesn't always report.
 - A command sent while YouTube is closed is accepted by YouTube's servers and never reaches the TV, which is why playing a video opens the app instead.
+- Home Assistant restarting, or the entry reloading, leaves the TV playing: the session is dropped without telling the TV, and YouTube's servers time it out. Turning **Remote session** off does tell the TV, which is what lets it play Shorts again, and that stops playback and drops the queue, the same as stopping casting from the phone app.
 
 ## Queue
 

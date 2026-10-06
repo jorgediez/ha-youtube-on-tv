@@ -416,15 +416,24 @@ class YouTubeOnTvCoordinator(DataUpdateCoordinator[TvState]):
             self.hass, self._async_run(), f"{DOMAIN} lounge {entry.entry_id}"
         )
 
-    async def _async_stop_listening(self) -> None:
-        """End the session, so the TV no longer sees a connected remote."""
+    async def _async_stop_listening(self, *, terminate: bool) -> None:
+        """Stop the session, telling the TV about it only if terminate.
+
+        A disconnect sends "MDX_SESSION_DISCONNECT_REASON_DISCONNECTED_BY_USER",
+        which is what the phone app sends to stop casting: the TV stops
+        playing and drops its queue. That belongs to turning the remote
+        session off, where the point is that the TV no longer sees a remote,
+        but not to Home Assistant restarting or the entry reloading, which
+        would interrupt whoever is watching. Dropping the session quietly
+        leaves the TV playing; YouTube's servers time the session out.
+        """
         if self._task is not None:
             self._task.cancel()
             await asyncio.gather(self._task, return_exceptions=True)
             self._task = None
         if self.api.session is None or self.api.session.closed:
             return
-        if self.api.connected():
+        if terminate and self.api.connected():
             try:
                 async with asyncio.timeout(5):
                     await self.api.disconnect()
@@ -441,7 +450,7 @@ class YouTubeOnTvCoordinator(DataUpdateCoordinator[TvState]):
             self._start_listening()
             return
 
-        await self._async_stop_listening()
+        await self._async_stop_listening(terminate=True)
         self._cancel_settle()
         self._state = TvState()
         self.async_set_updated_data(self._state)
@@ -454,7 +463,7 @@ class YouTubeOnTvCoordinator(DataUpdateCoordinator[TvState]):
         if self._unsub_stale_reply is not None:
             self._unsub_stale_reply()
             self._unsub_stale_reply = None
-        await self._async_stop_listening()
+        await self._async_stop_listening(terminate=False)
         if self.api.session is not None and not self.api.session.closed:
             await self.api.close()
 
