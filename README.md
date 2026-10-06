@@ -40,7 +40,7 @@ Any device whose YouTube app supports "Link with TV code" should work.
 
 LG webOS, Chromecast with Google TV, Fire TV and Roku use the same protocol but haven't been reported on yet.
 
-**Android TV devices and the Apple TV need a TV code.** A Xiaomi Mi Box was checked with `scripts/dial_scan.py`: it publishes DIAL, but its DIAL server registers no YouTube app even while YouTube is playing, so there's no screen id to discover and no local address to use. The Shield and Onn behaved the same way, and an Apple TV publishes no DIAL at all. Everything works once added with a code, except what needs the TV's address: the **App state** sensor, turning YouTube on and off, and opening YouTube to play a video while it's closed.
+**Android TV devices and the Apple TV need a TV code.** A Xiaomi Mi Box was checked with `scripts/dial_scan.py`: it publishes DIAL, but its DIAL server registers no YouTube app even while YouTube is playing, so there's no screen id to discover and no local address to use. The Shield and Onn behaved the same way, and an Apple TV publishes no DIAL at all. Everything works once added with a code, except what needs the TV's address: the **App state** sensor, and closing YouTube. Such a TV can still open YouTube, and play a video while the app is closed, through [open actions](https://github.com/jorgediez/ha-youtube-on-tv/blob/main/docs/automations.md#open-youtube-on-a-tv-added-with-a-code) you configure for it.
 
 YouTube Kids is not supported.
 
