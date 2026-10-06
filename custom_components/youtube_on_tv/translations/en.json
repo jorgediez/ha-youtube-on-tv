@@ -51,6 +51,22 @@
       "reauth_successful": "Re-authentication was successful"
     }
   },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Open YouTube on the TV",
+        "data": {
+          "open_actions": "Actions that open YouTube"
+        },
+        "data_description": {
+          "open_actions": "A TV added with a code can't be opened by the integration. When its YouTube app is offline, these actions run before playing a video or turning the player on; then the integration waits up to 45 seconds for the app to come online. Example: turn on the streaming box, then select its YouTube app as the source. Leave empty to send commands without opening."
+        }
+      }
+    },
+    "error": {
+      "invalid_actions": "These actions are not valid."
+    }
+  },
   "exceptions": {
     "cannot_connect": {
       "message": "Failed to connect to YouTube: {error}"
@@ -81,6 +97,9 @@
     },
     "queue_changed": {
       "message": "The queue changed on the TV. Try again."
+    },
+    "open_timeout": {
+      "message": "YouTube didn't come online on the TV within {seconds} seconds after the open actions ran."
     }
   },
   "device": {

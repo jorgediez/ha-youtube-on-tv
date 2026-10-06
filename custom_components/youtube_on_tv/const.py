@@ -48,5 +48,13 @@ STALE_REPLY_TIMEOUT: Final = 10
 # end is assumed to have stopped.
 POSITION_OVERRUN: Final = 30
 
+# Option of a TV entry: actions that open YouTube on the TV, for TVs without
+# DIAL (added with a TV code), e.g. wake a streaming box and pick the app.
+# The Lounge protocol can't start the app itself.
+CONF_OPEN_ACTIONS: Final = "open_actions"
+# Seconds to wait for the TV's YouTube app to come online after the open
+# actions ran: waking the box, starting the app and its Lounge session.
+OPEN_TIMEOUT: Final = 45
+
 DIAL_TIMEOUT: Final = 5
 DIAL_ST: Final = "urn:dial-multiscreen-org:service:dial:1"

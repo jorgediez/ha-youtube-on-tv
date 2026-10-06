@@ -29,28 +29,33 @@ from pyytlounge import (
     YtLoungeApi,
 )
 from pyytlounge.exceptions import NotConnectedException, NotLinkedException
+import voluptuous as vol
 
 from homeassistant.const import CONF_HOST
-from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
+from homeassistant.core import CALLBACK_TYPE, Context, HomeAssistant, callback
 from homeassistant.exceptions import (
     ConfigEntryAuthFailed,
     ConfigEntryNotReady,
     HomeAssistantError,
     ServiceValidationError,
 )
+from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.event import async_call_later, async_track_time_interval
+from homeassistant.helpers.script import Script, async_validate_actions_config
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util import dt as dt_util
 
 from .const import (
     APP_STATE_INTERVAL,
     CONF_APP_URL,
+    CONF_OPEN_ACTIONS,
     CONF_SCREEN_ID,
     CONF_SESSION_ENABLED,
     DOMAIN,
     LOGGER,
     LOUNGE_DEVICE_NAME,
+    OPEN_TIMEOUT,
     OUTAGE_WARNING_DELAY,
     POSITION_OVERRUN,
     POSITION_TOLERANCE,
@@ -90,6 +95,9 @@ MAX_AUTH_FAILURES = 3
 MIN_SUBSCRIBE_SECONDS = 1.0
 # Ad states that mean an ad is on screen. Other labels arrive as an ad ends.
 _AD_RUNNING_STATES = (State.Playing, State.Advertisement, State.Starting)
+# While waiting for the app to come online after the open actions, the TV is
+# asked what's playing this often: a screen that just came online answers.
+OPEN_POLL_SECONDS = 2.0
 
 # After a queue change from Home Assistant, the TV keeps reporting the old
 # queue for a moment; reports that don't match the change are ignored for up
@@ -314,6 +322,8 @@ class YouTubeOnTvCoordinator(DataUpdateCoordinator[TvState]):
         # Id of the TV's queue, and a queue change sent but not yet reported.
         self._list_id: str = ""
         self._pending_queue: tuple[tuple[str, ...], float] | None = None
+        # Set to cut a reconnect wait short, after the app was opened.
+        self._reconnect_now = asyncio.Event()
 
     @property
     def app_running(self) -> bool | None:
@@ -324,6 +334,11 @@ class YouTubeOnTvCoordinator(DataUpdateCoordinator[TvState]):
     def has_app_state(self) -> bool:
         """Return True if the TV's DIAL endpoint is known and polled."""
         return self._app_url is not None
+
+    @property
+    def open_actions(self) -> list[dict[str, Any]]:
+        """Return the actions that open YouTube on a TV without DIAL."""
+        return self.config_entry.options.get(CONF_OPEN_ACTIONS) or []
 
     @property
     def working_state(self) -> TvState:
@@ -484,11 +499,18 @@ class YouTubeOnTvCoordinator(DataUpdateCoordinator[TvState]):
                 LOGGER.debug("Lounge connection error: %s", err)
                 self._set_available(False)
                 self._warn_if_offline_for_long(err)
-                await asyncio.sleep(delay)
+                await self._async_reconnect_wait(delay)
                 delay = min(delay * 2, RECONNECT_MAX_DELAY)
             else:
                 delay = RECONNECT_MIN_DELAY
                 auth_failures = 0
+
+    async def _async_reconnect_wait(self, delay: float) -> None:
+        """Wait before reconnecting, or less if the app was just opened."""
+        self._reconnect_now.clear()
+        with contextlib.suppress(TimeoutError):
+            async with asyncio.timeout(delay):
+                await self._reconnect_now.wait()
 
     async def _async_connect_and_subscribe(self) -> None:
         if not self.api.linked():
@@ -601,6 +623,63 @@ class YouTubeOnTvCoordinator(DataUpdateCoordinator[TvState]):
             ) from err
         await self._async_check_app_state()
 
+    async def async_open_if_closed(self) -> None:
+        """Open YouTube on a TV without DIAL if its Lounge screen is offline.
+
+        Without DIAL the app state is not known; a TV whose Lounge session
+        ended (the app closed or went to the background) shows as off. Does
+        nothing when no open actions are set: the command is sent anyway.
+        """
+        if self.has_app_state or not self.open_actions:
+            return
+        if self._state.status is not PlayerStatus.OFF and self.api.connected():
+            return
+        await self.async_open()
+
+    async def async_open(self) -> None:
+        """Run the open actions, then wait for the app to come online.
+
+        Online means the Lounge session is back and the TV answered what's
+        playing (the player is no longer off).
+        """
+        try:
+            sequence = await async_validate_actions_config(
+                self.hass, cv.SCRIPT_SCHEMA(self.open_actions)
+            )
+            script = Script(
+                self.hass,
+                sequence,
+                f"{self.config_entry.title} open",
+                DOMAIN,
+                running_description="open YouTube",
+            )
+            await script.async_run(context=Context())
+        except (vol.Invalid, HomeAssistantError) as err:
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key="launch_failed",
+                translation_placeholders={"error": str(err)},
+            ) from err
+        # The session waits out its backoff while the app is closed; retry now.
+        self._reconnect_now.set()
+        try:
+            async with asyncio.timeout(OPEN_TIMEOUT):
+                while (
+                    self._state.status is PlayerStatus.OFF or not self.api.connected()
+                ):
+                    if self.api.connected():
+                        with contextlib.suppress(
+                            *_CONNECTION_ERRORS, NotConnectedException
+                        ):
+                            await self.api.get_now_playing()
+                    await asyncio.sleep(OPEN_POLL_SECONDS)
+        except TimeoutError as err:
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key="open_timeout",
+                translation_placeholders={"seconds": str(OPEN_TIMEOUT)},
+            ) from err
+
     async def async_command(
         self, command: Callable[..., Awaitable[bool]], *args: Any
     ) -> None:
@@ -684,10 +763,13 @@ class YouTubeOnTvCoordinator(DataUpdateCoordinator[TvState]):
         """Open YouTube on the TV if it's closed, so a command reaches it.
 
         A command sent while the app is closed is accepted by YouTube's
-        servers and never reaches the TV. A TV added with a code can't be
-        opened from here; the command is sent anyway.
+        servers and never reaches the TV. A TV added with a code opens through
+        its open actions, if it has any; otherwise the command is sent anyway.
         """
-        if self._app_running is not False or not self.has_app_state:
+        if not self.has_app_state:
+            await self.async_open_if_closed()
+            return
+        if self._app_running is not False:
             return
         await self.async_launch(video_id)
         with contextlib.suppress(TimeoutError):
