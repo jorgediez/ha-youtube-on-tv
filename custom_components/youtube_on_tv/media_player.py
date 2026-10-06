@@ -21,7 +21,7 @@ from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import YouTubeOnTvConfigEntry
-from .const import DOMAIN
+from .const import DOMAIN, LOGGER
 from .coordinator import PlayerStatus, YouTubeOnTvCoordinator
 from .entity import YouTubeOnTvEntity
 
@@ -161,16 +161,18 @@ class YouTubeOnTvMediaPlayer(YouTubeOnTvEntity, MediaPlayerEntity):
                 translation_key="invalid_video",
                 translation_placeholders={"media_id": media_id},
             )
+        enqueue = kwargs.get(ATTR_MEDIA_ENQUEUE)
+        LOGGER.debug("Asked to play %s, enqueue %s", video_id, enqueue)
         if self.coordinator.app_running is False:
             # YouTube isn't open: a Lounge command would be accepted by
             # YouTube's servers and never reach the TV, so open the app on it.
             # This comes before the enqueue handling on purpose: with nothing
             # playing there is no queue to add to, so "add" and "next" play
             # the video too.
+            LOGGER.debug("YouTube is closed; opening it on %s", video_id)
             await self.coordinator.async_launch(video_id)
             return
         await self.coordinator.async_open_if_closed()
-        enqueue = kwargs.get(ATTR_MEDIA_ENQUEUE)
         if enqueue == MediaPlayerEnqueue.ADD:
             await self.coordinator.async_queue_add(video_id)
         elif enqueue == MediaPlayerEnqueue.NEXT:

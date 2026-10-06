@@ -103,6 +103,12 @@ OPEN_POLL_SECONDS = 2.0
 # queue for a moment; reports that don't match the change are ignored for up
 # to this many seconds, so the list doesn't jump back and forth.
 QUEUE_SETTLE_SECONDS = 5.0
+
+# Not every "now playing" report carries the queue, so there may be none known
+# yet when a video is added, for example right after connecting. The TV is
+# asked and given this long to answer, because adding to a queue it reported
+# is reliable while "addVideo" is not.
+QUEUE_REQUEST_SECONDS = 3.0
 # Seconds to wait for YouTube to start on the TV after opening it.
 LAUNCH_TIMEOUT = 20
 
@@ -707,15 +713,16 @@ class YouTubeOnTvCoordinator(DataUpdateCoordinator[TvState]):
 
     async def async_queue_add(self, video_id: str) -> None:
         """Append a video to the queue, or play it if nothing plays."""
-        state = self._state
-        if state.video_id is None:
+        if self._state.video_id is None:
             await self.async_command(self.api.play_video, video_id)
             return
-        await self.async_command(self.api.add_video, video_id)
-        if not state.queue or state.queue_index is None:
-            await self._async_request_queue()
+        if (known := await self._async_queue_to_change()) is not None:
+            queue, index = known
+            await self._async_resend_queue((*queue, video_id), index)
             return
-        self._note_queue((*state.queue, video_id), state.queue_index)
+        LOGGER.debug("Queue unknown; adding %s with addVideo", video_id)
+        await self.async_command(self.api.add_video, video_id)
+        await self._async_request_queue()
 
     async def async_queue_next(self, video_id: str) -> None:
         """Queue a video after the playing one, or play it if nothing plays.
@@ -725,17 +732,17 @@ class YouTubeOnTvCoordinator(DataUpdateCoordinator[TvState]):
         keeps its own queue, so the video is inserted there; playing it
         would replace the video on screen.
         """
-        state = self._state
-        if state.video_id is None:
+        if self._state.video_id is None:
             await self.async_command(self.api.play_video, video_id)
             return
-        await self.async_command(self.api.insert_video, video_id)
-        if not state.queue or state.queue_index is None:
-            await self._async_request_queue()
+        if (known := await self._async_queue_to_change()) is not None:
+            queue, index = known
+            after = [*queue[: index + 1], video_id, *queue[index + 1 :]]
+            await self._async_resend_queue(tuple(after), index)
             return
-        queue = list(state.queue)
-        queue.insert(state.queue_index + 1, video_id)
-        self._note_queue(tuple(queue), state.queue_index)
+        LOGGER.debug("Queue unknown; queueing %s next with insertVideo", video_id)
+        await self.async_command(self.api.insert_video, video_id)
+        await self._async_request_queue()
 
     async def async_queue_replace(self, video_ids: list[str]) -> None:
         """Replace the whole queue and play its first video."""
@@ -793,15 +800,52 @@ class YouTubeOnTvCoordinator(DataUpdateCoordinator[TvState]):
             raise ServiceValidationError(
                 translation_domain=DOMAIN, translation_key="queue_changed"
             )
+        await self._async_resend_queue(tuple(queue), index)
+
+    async def _async_queue_to_change(self) -> tuple[tuple[str, ...], int] | None:
+        """Return the queue and where the playing video sits in it, or None.
+
+        Not every "now playing" report carries the queue, so none may be known
+        yet, for example right after connecting. The TV is asked rather than
+        adding blind, because what it reports can be sent back reliably.
+        """
+        deadline = time.monotonic() + QUEUE_REQUEST_SECONDS
+        asked = False
+        while True:
+            state = self._state
+            if state.queue and state.queue_index is not None:
+                return state.queue, state.queue_index
+            if state.video_id is None:
+                return None
+            if not asked:
+                await self._async_request_queue()
+                asked = True
+            if time.monotonic() >= deadline:
+                return None
+            await asyncio.sleep(0.1)
+
+    async def _async_resend_queue(self, queue: tuple[str, ...], index: int) -> None:
+        """Send the whole queue, carrying on with queue[index] where it is.
+
+        This is how a video is added to a known queue, rather than with
+        "addVideo" or "insertVideo": those only work on a queue this remote
+        set itself. Against the list a TV built for playback started with
+        its own remote, both were seen to fail on a Samsung Tizen TV: the
+        added video either started playing at once or was dropped silently.
+        Sending the list is reliable, and re-sending the playing video
+        doesn't interrupt it.
+        """
+        state = self._state
+        LOGGER.debug("Sending the queue: %d videos, playing at %d", len(queue), index)
         await self.async_command(
             self.api.set_playlist,
-            queue,
+            list(queue),
             index,
             round(current_position(state), 1),
             # A list id from an older queue would not match this one.
             self._list_id if state.queue_index is not None else "",
         )
-        self._note_queue(tuple(queue), index)
+        self._note_queue(queue, index)
 
     async def _async_request_queue(self) -> None:
         """Ask the TV what's playing, which reports its queue too."""

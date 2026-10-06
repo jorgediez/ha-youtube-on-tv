@@ -34,7 +34,9 @@ The **Skip ad** button does what pressing skip on the remote does: it works once
 
 ## Queue
 
-- The queue commands (`addVideo`, `insertVideo`, `setPlaylist`) are the ones the YouTube phone app sends. There is no command to move or remove one video, so reordering and deleting send the whole queue again with the playing video and its position; the TV carries on without a visible gap.
+- The queue commands (`addVideo`, `insertVideo`, `setPlaylist`) are the ones the YouTube phone app sends. There is no command to move or remove one video, so every change to a known queue sends the whole queue again with the playing video and its position; the TV carries on without a visible gap.
+- `addVideo` and `insertVideo` are only used when the TV reports no queue, and the TV is asked for it first, with 3 seconds to answer. They only work on a queue sent from here: against the list a TV builds for playback started with its own remote, a Samsung Tizen TV either played the added video at once or dropped it silently.
+- Not every now playing report carries the queue, so there may be none known shortly after connecting. A debug log says which way a video was added: "Sending the queue" or "Queue unknown".
 - The TV reports the queue in its now playing updates, but not the position in it, so a video queued twice is matched by the position it had last.
 - After a change from Home Assistant the TV keeps reporting the old queue for a few seconds. Reports that don't match the change are ignored for up to 5 seconds, so the list doesn't jump back and forth.
 - A video can play with no queue reported, for example after the session dropped and came back. Adding a video or playing one next still goes to the TV's own queue, and the integration asks the TV for it, so the playing video isn't replaced.

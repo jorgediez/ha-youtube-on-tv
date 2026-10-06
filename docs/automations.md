@@ -102,6 +102,23 @@ data:
 
 With nothing playing, `add` and `next` play the video now.
 
+Built in the user interface, the action puts the video inside a `media:` block
+instead. `enqueue` goes next to that block, never inside it: Home Assistant
+promotes only `media_content_id` and `media_content_type` out of `media:` and
+silently drops the rest, so an `enqueue` in there is lost and the video plays
+at once.
+
+```yaml
+action: media_player.play_media
+target:
+  entity_id: media_player.youtube_on_samsung_neo_qled
+data:
+  media:
+    media_content_type: video
+    media_content_id: https://youtu.be/dQw4w9WgXcQ
+  enqueue: next
+```
+
 The **Queue** to-do list shows the same queue, including videos queued from a phone. Played videos show as completed. In the list:
 
 - **Add** a YouTube link or video id to append it (or play it, if nothing plays).

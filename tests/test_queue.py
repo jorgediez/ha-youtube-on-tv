@@ -32,6 +32,7 @@ from homeassistant.setup import async_setup_component
 
 from .conftest import FakeLounge
 
+COORDINATOR = "custom_components.youtube_on_tv.coordinator"
 PREFIX = "youtube_on_samsung_neo_qled"
 QUEUE_ID = f"todo.{PREFIX}_queue"
 PLAYER_ID = f"media_player.{PREFIX}"
@@ -125,16 +126,19 @@ async def test_add_item_appends(
     hass: HomeAssistant,
     init_integration: FakeLounge,
     mock_config_entry: MockConfigEntry,
+    freezer: FrozenDateTimeFactory,
 ) -> None:
     """A pasted link is appended and shown before the TV confirms it."""
     await _playing(hass, init_integration, mock_config_entry, A, [A, B])
+    freezer.tick(10)
     await hass.services.async_call(
         TODO_DOMAIN,
         "add_item",
         {ATTR_ENTITY_ID: QUEUE_ID, "item": f"https://youtu.be/{C}"},
         blocking=True,
     )
-    init_integration.add_video.assert_awaited_once_with(C)
+    init_integration.set_playlist.assert_awaited_once_with([A, B, C], 0, 110.0, LIST_ID)
+    init_integration.add_video.assert_not_awaited()
     assert _coordinator(mock_config_entry).data.queue == (A, B, C)
 
 
@@ -325,8 +329,8 @@ async def test_playing_index_with_repeats(
 @pytest.mark.parametrize(
     ("enqueue", "method", "args"),
     [
-        ("add", "add_video", (C,)),
-        ("next", "insert_video", (C,)),
+        ("add", "set_playlist", ([A, B, C], 0, 110.0, LIST_ID)),
+        ("next", "set_playlist", ([A, C, B], 0, 110.0, LIST_ID)),
         ("replace", "set_playlist", ([C], 0, 0, "")),
         ("play", "play_video", (C,)),
     ],
@@ -335,12 +339,14 @@ async def test_play_media_enqueue(
     hass: HomeAssistant,
     init_integration: FakeLounge,
     mock_config_entry: MockConfigEntry,
+    freezer: FrozenDateTimeFactory,
     enqueue: str,
     method: str,
     args: tuple,
 ) -> None:
     """play_media queues videos as asked."""
     await _playing(hass, init_integration, mock_config_entry, A, [A, B])
+    freezer.tick(10)
     await hass.services.async_call(
         MP_DOMAIN,
         SERVICE_PLAY_MEDIA,
@@ -364,6 +370,43 @@ async def test_play_next_is_shown_after_the_playing_video(
     await _playing(hass, init_integration, mock_config_entry, A, [A, B])
     await _coordinator(mock_config_entry).async_queue_next(C)
     assert _coordinator(mock_config_entry).data.queue == (A, C, B)
+    init_integration.insert_video.assert_not_awaited()
+
+
+async def test_add_to_a_queue_the_tv_started_resends_the_list(
+    hass: HomeAssistant,
+    init_integration: FakeLounge,
+    mock_config_entry: MockConfigEntry,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """Adding to a queue the TV built keeps the playing video on screen.
+
+    Reported on a Samsung Tizen TV: a video played from the TV's own remote,
+    and "addVideo" made the TV play the added video at once instead of
+    queueing it. The whole list is sent instead, with the playing video at
+    its index.
+    """
+    await _playing(hass, init_integration, mock_config_entry, B, [A, B, C])
+    freezer.tick(10)
+    await hass.services.async_call(
+        MP_DOMAIN,
+        SERVICE_PLAY_MEDIA,
+        {
+            ATTR_ENTITY_ID: PLAYER_ID,
+            ATTR_MEDIA_CONTENT_ID: D,
+            ATTR_MEDIA_CONTENT_TYPE: "video",
+            ATTR_MEDIA_ENQUEUE: "add",
+        },
+        blocking=True,
+    )
+    init_integration.set_playlist.assert_awaited_once_with(
+        [A, B, C, D], 1, 110.0, LIST_ID
+    )
+    init_integration.add_video.assert_not_awaited()
+    init_integration.play_video.assert_not_awaited()
+    coordinator = _coordinator(mock_config_entry)
+    assert coordinator.data.queue == (A, B, C, D)
+    assert coordinator.data.queue_index == 1
 
 
 async def test_lounge_api_reports_queue_and_sends_commands() -> None:
@@ -432,22 +475,64 @@ async def test_queue_on_a_video_without_known_queue(
     assert _coordinator(mock_config_entry).data.queue == ()
     init_integration.get_now_playing.reset_mock()
 
-    await hass.services.async_call(
-        MP_DOMAIN,
-        SERVICE_PLAY_MEDIA,
-        {
-            ATTR_ENTITY_ID: PLAYER_ID,
-            ATTR_MEDIA_CONTENT_ID: C,
-            ATTR_MEDIA_CONTENT_TYPE: "video",
-            ATTR_MEDIA_ENQUEUE: enqueue,
-        },
-        blocking=True,
-    )
+    with patch(f"{COORDINATOR}.QUEUE_REQUEST_SECONDS", 0.05):
+        await hass.services.async_call(
+            MP_DOMAIN,
+            SERVICE_PLAY_MEDIA,
+            {
+                ATTR_ENTITY_ID: PLAYER_ID,
+                ATTR_MEDIA_CONTENT_ID: C,
+                ATTR_MEDIA_CONTENT_TYPE: "video",
+                ATTR_MEDIA_ENQUEUE: enqueue,
+            },
+            blocking=True,
+        )
 
     getattr(init_integration, method).assert_awaited_once_with(C)
     init_integration.play_video.assert_not_awaited()
     # The TV is asked for its queue, so the list shows it.
     init_integration.get_now_playing.assert_awaited()
+
+
+async def test_a_queue_reported_when_asked_is_used(
+    hass: HomeAssistant,
+    init_integration: FakeLounge,
+    mock_config_entry: MockConfigEntry,
+) -> None:
+    """With no queue known yet, the TV is asked before adding blind.
+
+    Reported on a Samsung Tizen TV: a video was added 45 s after a reload,
+    before any report had carried the queue, so it went out as "addVideo"
+    and the TV played it next instead of queueing it.
+    """
+    coordinator = _coordinator(mock_config_entry)
+    await _playing_without_queue(hass, init_integration, B)
+    assert coordinator.data.queue == ()
+
+    async def report_queue() -> bool:
+        coordinator.handle_queue(
+            {"listId": LIST_ID, "mdxExpandedReceiverVideoIdList": f"{A},{B},{C}"}
+        )
+        return True
+
+    init_integration.get_now_playing.side_effect = report_queue
+    await hass.services.async_call(
+        MP_DOMAIN,
+        SERVICE_PLAY_MEDIA,
+        {
+            ATTR_ENTITY_ID: PLAYER_ID,
+            ATTR_MEDIA_CONTENT_ID: D,
+            ATTR_MEDIA_CONTENT_TYPE: "video",
+            ATTR_MEDIA_ENQUEUE: "add",
+        },
+        blocking=True,
+    )
+
+    init_integration.get_now_playing.assert_awaited()
+    init_integration.add_video.assert_not_awaited()
+    init_integration.set_playlist.assert_awaited_once()
+    assert init_integration.set_playlist.await_args.args[:2] == ([A, B, C, D], 1)
+    assert coordinator.data.queue == (A, B, C, D)
 
 
 async def test_next_plays_when_nothing_plays(
@@ -489,7 +574,8 @@ async def test_bare_video_id_through_the_rest_api(
         },
     )
     assert response.status == 200
-    init_integration.insert_video.assert_awaited_once_with(C)
+    init_integration.set_playlist.assert_awaited_once()
+    assert init_integration.set_playlist.await_args.args[:2] == ([A, C, B], 0)
 
 
 # Resending the queue
