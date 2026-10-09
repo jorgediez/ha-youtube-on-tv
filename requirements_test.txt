@@ -3,4 +3,4 @@ pytest-homeassistant-custom-component==0.13.367
 # mirrors what Home Assistant itself pins. Bump it when Home Assistant does.
 async-upnp-client==0.48.1
 pyytlounge==3.4.0
-ruff==0.16.9
+ruff==0.16.10
