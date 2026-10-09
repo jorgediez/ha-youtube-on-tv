@@ -1,4 +1,4 @@
-pytest-homeassistant-custom-component==0.13.367
+pytest-homeassistant-custom-component==0.13.368
 # Home Assistant's ssdp component needs this to import in tests, so the pin
 # mirrors what Home Assistant itself pins. Bump it when Home Assistant does.
 async-upnp-client==0.48.1
