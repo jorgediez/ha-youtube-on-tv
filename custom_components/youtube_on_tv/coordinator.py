@@ -28,7 +28,11 @@ from pyytlounge import (
     SubtitlesTrackEvent,
     YtLoungeApi,
 )
-from pyytlounge.exceptions import NotConnectedException, NotLinkedException
+from pyytlounge.exceptions import (
+    NotConnectedException,
+    NotLinkedException,
+    NotSupportedException,
+)
 import voluptuous as vol
 
 from homeassistant.const import CONF_HOST
@@ -330,6 +334,7 @@ class YouTubeOnTvCoordinator(DataUpdateCoordinator[TvState]):
         self._pending_queue: tuple[tuple[str, ...], float] | None = None
         # Set to cut a reconnect wait short, after the app was opened.
         self._reconnect_now = asyncio.Event()
+        self._unsupported_warned = False
 
     @property
     def app_running(self) -> bool | None:
@@ -505,6 +510,12 @@ class YouTubeOnTvCoordinator(DataUpdateCoordinator[TvState]):
                 self._set_available(False)
                 self.config_entry.async_start_reauth(self.hass)
                 return
+            except NotSupportedException:
+                auth_failures = 0
+                self._set_available(False)
+                self._warn_if_unsupported()
+                await self._async_reconnect_wait(delay)
+                delay = min(delay * 2, RECONNECT_MAX_DELAY)
             except (
                 *_CONNECTION_ERRORS,
                 NotConnectedException,
@@ -516,9 +527,23 @@ class YouTubeOnTvCoordinator(DataUpdateCoordinator[TvState]):
                 self._warn_if_offline_for_long(err)
                 await self._async_reconnect_wait(delay)
                 delay = min(delay * 2, RECONNECT_MAX_DELAY)
+            except Exception:  # noqa: BLE001
+                # This loop is the only thing that keeps the entities fed, and
+                # nothing restarts it, so an error it doesn't know is retried
+                # rather than left to end it. Anything reaching here is a bug
+                # or a new error from the library, hence the traceback.
+                auth_failures = 0
+                LOGGER.exception(
+                    "Unexpected error from the lounge session of %s; retrying",
+                    self.config_entry.title,
+                )
+                self._set_available(False)
+                await self._async_reconnect_wait(delay)
+                delay = min(delay * 2, RECONNECT_MAX_DELAY)
             else:
                 delay = RECONNECT_MIN_DELAY
                 auth_failures = 0
+                self._unsupported_warned = False
 
     async def _async_reconnect_wait(self, delay: float) -> None:
         """Wait before reconnecting, or less if the app was just opened."""
@@ -578,6 +603,24 @@ class YouTubeOnTvCoordinator(DataUpdateCoordinator[TvState]):
             self.config_entry.title,
             self._offline_since.isoformat(timespec="seconds"),
             error or type(error).__name__,
+        )
+
+    @callback
+    def _warn_if_unsupported(self) -> None:
+        """Report a screen the lounge API won't control, once.
+
+        pyytlounge refuses a screen whose client is blacklisted, which today
+        means YouTube Kids: picking a kids profile on the TV is enough. The
+        session keeps retrying, so it comes back on its own once normal
+        YouTube is on screen again.
+        """
+        if self._unsupported_warned:
+            return
+        self._unsupported_warned = True
+        LOGGER.warning(
+            "%s is running a YouTube client that can't be controlled, such as "
+            "YouTube Kids; retrying until normal YouTube is back on screen",
+            self.config_entry.title,
         )
 
     async def _async_check_app_state(self, _now: datetime | None = None) -> None:
