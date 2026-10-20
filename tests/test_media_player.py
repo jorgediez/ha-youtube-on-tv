@@ -450,6 +450,28 @@ async def test_answering_tv_keeps_playing(
     assert hass.states.get(ENTITY_ID).state == STATE_PLAYING
 
 
+async def test_unsent_check_keeps_playing(
+    hass: HomeAssistant,
+    init_integration: FakeLounge,
+    mock_config_entry: MockConfigEntry,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """A check YouTube didn't accept says nothing, so playback stands.
+
+    pyytlounge returns False instead of raising when the session is refused,
+    which left the TV unasked and the player going idle 10 seconds later.
+    """
+    coordinator = _coordinator(mock_config_entry)
+    coordinator.handle_now_playing(_now_playing(VIDEO_ID, State.Playing, 100, 900))
+    await hass.async_block_till_done()
+    init_integration.get_now_playing.return_value = False
+
+    await _tick(hass, freezer, STALE_CHECK_INTERVAL.total_seconds())
+    init_integration.get_now_playing.assert_awaited()
+    await _tick(hass, freezer, STALE_REPLY_TIMEOUT)
+    assert hass.states.get(ENTITY_ID).state == STATE_PLAYING
+
+
 async def test_position_past_end_goes_idle(
     hass: HomeAssistant,
     init_integration: FakeLounge,
