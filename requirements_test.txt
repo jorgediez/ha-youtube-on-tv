@@ -1,3 +1,5 @@
+# Pins the newest stable Home Assistant, and with it pytest, pytest-asyncio,
+# pytest-timeout, pytest-cov and PyYAML. Skip harness releases built on a beta.
 pytest-homeassistant-custom-component==0.13.372
 # Home Assistant's ssdp component needs this to import in tests, so the pin
 # mirrors what Home Assistant itself pins. Bump it when Home Assistant does.

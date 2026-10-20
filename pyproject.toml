@@ -6,12 +6,13 @@ license = "GPL-3.0-or-later"
 requires-python = ">=3.14"
 
 [tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
-testpaths = ["tests"]
 
 [tool.coverage.run]
-source = ["custom_components.youtube_on_tv"]
+source = ["custom_components/youtube_on_tv"]
 
 [tool.ruff]
 target-version = "py314"
@@ -19,6 +20,7 @@ line-length = 88
 
 [tool.ruff.lint]
 select = [
+  "ASYNC",
   "B",    # bugbear
   "BLE",  # blind except
   "D",    # docstrings

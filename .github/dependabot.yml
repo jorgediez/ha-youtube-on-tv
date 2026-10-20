@@ -3,11 +3,16 @@ updates:
   - package-ecosystem: github-actions
     directory: /
     schedule:
-      interval: weekly
+      interval: monthly
+    groups:
+      github-actions:
+        patterns: ["*"]
   - package-ecosystem: pip
     directory: /
     schedule:
-      interval: weekly
+      interval: monthly
+    # One PR per package: a ruff bump needs a look at new rules and formatting,
+    # a harness bump at the Home Assistant it pins, and either can land alone.
     ignore:
       # Mirrors the version Home Assistant pins, not the latest release.
       - dependency-name: async-upnp-client

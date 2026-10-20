@@ -30,7 +30,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.setup import async_setup_component
 
-from .conftest import FakeLounge
+from .conftest import FakeLounge, wait_for
 
 COORDINATOR = "custom_components.youtube_on_tv.coordinator"
 PREFIX = "youtube_on_samsung_neo_qled"
@@ -606,9 +606,7 @@ async def test_queue_set_refuses_a_queue_without_the_playing_video(
 
 async def _lookups_done(coordinator: YouTubeOnTvCoordinator) -> None:
     """Wait until no title lookup is in flight."""
-    async with asyncio.timeout(5):
-        while coordinator._titles_pending:
-            await asyncio.sleep(0.01)
+    await wait_for(lambda: not coordinator._titles_pending)
 
 
 async def test_titles_fetched_a_few_at_a_time_nearest_first(

@@ -833,7 +833,9 @@ class YouTubeOnTvCoordinator(DataUpdateCoordinator[TvState]):
         await self.async_launch(video_id)
         with contextlib.suppress(TimeoutError):
             async with asyncio.timeout(LAUNCH_TIMEOUT):
-                while self._state.video_id is None:
+                # Polled, not an Event: the video id arrives through whichever
+                # of several state updates the TV happens to send first.
+                while self._state.video_id is None:  # noqa: ASYNC110
                     await asyncio.sleep(0.5)
 
     async def async_queue_set(self, queue: list[str], index: int) -> None:

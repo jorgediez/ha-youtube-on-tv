@@ -185,7 +185,7 @@ async def test_options_flow_sets_open_actions(
     assert result["type"] is FlowResultType.FORM
     assert result["step_id"] == "init"
     result = await hass.config_entries.options.async_configure(
-        result["flow_id"], {CONF_OPEN_ACTIONS: [{"not": "an action"}]}
+        result["flow_id"], {CONF_OPEN_ACTIONS: [{"action": "not an action"}]}
     )
     assert result["errors"] == {CONF_OPEN_ACTIONS: "invalid_actions"}
     result = await hass.config_entries.options.async_configure(
