@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import timedelta
 import json
 import logging
@@ -12,6 +13,7 @@ import aiohttp
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 from pytest_homeassistant_custom_component.typing import ClientSessionGenerator
+from pyytlounge.exceptions import NotSupportedException
 
 from custom_components.youtube_on_tv.const import (
     CONF_MODEL,
@@ -261,6 +263,65 @@ async def test_long_outage_is_reported(
         init_integration.connect.side_effect = init_integration._connect
         await wait_for(lambda: "Reconnected to" in caplog.text)
     assert "Reconnected to Samsung Neo QLED" in caplog.text
+
+
+async def test_unsupported_client_retries(
+    hass: HomeAssistant,
+    init_integration: FakeLounge,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A screen pyytlounge refuses is retried, not given up on.
+
+    It raises NotSupportedException for a blacklisted client, which today
+    means a kids profile on the TV. Unhandled, that ended the background
+    task for good: the TV was left uncontrolled with the entities still
+    looking fine, and only reloading the entry brought it back.
+    """
+    caplog.set_level(logging.WARNING, logger="custom_components.youtube_on_tv")
+    failures = 0
+
+    async def kids_profile_once() -> None:
+        nonlocal failures
+        failures += 1
+        if failures == 1:
+            raise NotSupportedException("Unsupported client")
+        await init_integration._subscribe()
+
+    init_integration.subscribe.side_effect = kids_profile_once
+    init_integration.subscribed.clear()
+    init_integration.drop_connection()
+
+    # The session comes back by itself, with one warning saying why.
+    async with asyncio.timeout(5):
+        await init_integration.subscribed.wait()
+    await wait_for(lambda: not _player_unavailable(hass))
+    assert caplog.text.count("YouTube client that can't be controlled") == 1
+
+
+async def test_unexpected_error_retries(
+    hass: HomeAssistant,
+    init_integration: FakeLounge,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """An error the session doesn't know is logged and retried."""
+    caplog.set_level(logging.ERROR, logger="custom_components.youtube_on_tv")
+    failures = 0
+
+    async def surprise_once() -> None:
+        nonlocal failures
+        failures += 1
+        if failures == 1:
+            raise RuntimeError("something new from the library")
+        await init_integration._subscribe()
+
+    init_integration.subscribe.side_effect = surprise_once
+    init_integration.subscribed.clear()
+    init_integration.drop_connection()
+
+    async with asyncio.timeout(5):
+        await init_integration.subscribed.wait()
+    await wait_for(lambda: not _player_unavailable(hass))
+    assert "something new from the library" in caplog.text
 
 
 def _player_unavailable(hass: HomeAssistant) -> bool:

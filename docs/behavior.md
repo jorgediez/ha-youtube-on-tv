@@ -13,6 +13,8 @@ The TV pushes everything the integration knows, over YouTube's Lounge protocol. 
 | YouTube closed or sent to background, TV off | `off` |
 | Can't reach YouTube's servers, or the session is turned off | `unavailable` |
 
+The Lounge protocol refuses to control a YouTube Kids client, so picking a kids profile on the TV makes the entities unavailable. The session keeps retrying and comes back on its own once normal YouTube is on screen; the log says so once.
+
 ## Shorts
 
 The TV won't play Shorts while any device is connected to it as a remote — a phone that's casting does the same thing. Since this integration stays connected, the TV says Shorts can't play while a device is connected, and its own disconnect button doesn't help, because the integration reconnects right away.
