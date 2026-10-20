@@ -11,9 +11,8 @@ updates:
     directory: /
     schedule:
       interval: monthly
-    groups:
-      pip:
-        patterns: ["*"]
+    # One PR per package: a ruff bump needs a look at new rules and formatting,
+    # a harness bump at the Home Assistant it pins, and either can land alone.
     ignore:
       # Mirrors the version Home Assistant pins, not the latest release.
       - dependency-name: async-upnp-client

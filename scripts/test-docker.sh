@@ -8,9 +8,11 @@
 #   scripts/test-docker.sh --cov           # with a coverage report
 #   REBUILD=1 scripts/test-docker.sh       # rebuild the images anyway
 #
-# The pins come from the same places as in CI: "min" from the matrix in
-# .github/workflows/tests.yml, "latest" from requirements_test.txt. Each image is tagged
-# with a hash of its pins, so a bumped pin builds a new image by itself.
+# The pins come from the same places as in CI: each job's Python, and the "min" harness,
+# from its entry in the matrix in .github/workflows/tests.yml; everything else from
+# requirements_test.txt. Each image is tagged with a hash of its pins, so a bumped pin
+# builds a new image by itself. The min job also sets HA_MIN=true, as CI does, so the
+# tests check that it really runs the release hacs.json names.
 #
 # The repository is mounted read-only and copied inside the container (without .venv
 # and .git), so no caches or .pyc files end up in your working tree.
@@ -24,8 +26,13 @@ MOUNT="$ROOT"
 if pwd -W >/dev/null 2>&1; then MOUNT="$(cd "$ROOT" && pwd -W)"; fi
 export MSYS_NO_PATHCONV=1
 
-min_python="$(grep -m1 -o 'python: "[0-9.]*"' "$WORKFLOW" | grep -o '[0-9.]*')"
-min_harness="$(grep -m1 -o 'pytest-homeassistant-custom-component==[0-9.]*' "$WORKFLOW")"
+# Print one key of a matrix entry in the workflow, e.g. matrix_value min python.
+matrix_value() {
+  awk -v name="$1" -v key="$2:" '
+    $1 == "-" && $2 == "name:" { entry = $3 }
+    entry == name && $1 == key { gsub(/"/, "", $2); print $2; exit }
+  ' "$WORKFLOW"
+}
 
 targets=(min latest)
 if [[ $# -gt 0 && ( $1 == min || $1 == latest ) ]]; then
@@ -35,12 +42,16 @@ fi
 
 status=0
 for name in "${targets[@]}"; do
-  if [[ $name == min ]]; then
-    python="$min_python"
-    # The min harness, plus everything else in requirements_test.txt.
-    requirements="$min_harness"$'\n'"$(grep -v '^pytest-homeassistant-custom-component' "$REQUIREMENTS")"
+  python="$(matrix_value "$name" python)"
+  harness="$(matrix_value "$name" harness)"
+  if [[ -z $python ]]; then
+    echo "No \"$name\" entry with a python key in $WORKFLOW" >&2
+    exit 1
+  fi
+  if [[ -n $harness ]]; then
+    # The entry's harness, plus everything else in requirements_test.txt.
+    requirements="$harness"$'\n'"$(grep -v '^pytest-homeassistant-custom-component' "$REQUIREMENTS")"
   else
-    python=3.14
     requirements="$(cat "$REQUIREMENTS")"
   fi
   tag="$(printf '%s\n%s' "$python" "$requirements" | sha256sum | cut -c1-12)"
@@ -67,7 +78,9 @@ EOF
   fi
 
   echo ">>> Testing against HA $name"
-  docker run --rm -v "$MOUNT:/src:ro" "$image" bash -c '
+  ha_min=false
+  if [[ $name == min ]]; then ha_min=true; fi
+  docker run --rm -e HA_MIN="$ha_min" -v "$MOUNT:/src:ro" "$image" bash -c '
     mkdir /work &&
     tar -C /src --exclude=./.venv --exclude=./.git -cf - . | tar -C /work -xf - &&
     cd /work &&
