@@ -53,6 +53,7 @@ body:
       label: Logs
       description: >-
         Relevant lines from the Home Assistant log, with
-        `custom_components.youtube_on_tv: debug` if possible. Don't include
-        `pyytlounge: debug` lines: they contain the session token.
+        `custom_components.youtube_on_tv: debug` if possible, and
+        `pyytlounge: debug` for events the library doesn't handle. That one
+        also logs the session token: remove it before posting.
       render: text

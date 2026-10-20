@@ -30,8 +30,8 @@ Not a vulnerability in this integration:
   work, and nothing the integration does can change it. Keep the TV on a network
   you trust.
 - **`pyytlounge: debug` logs the session token.** That's the library's own debug
-  logging, and [Troubleshooting](docs/troubleshooting.md) says to leave it out of
-  shared logs.
+  logging, and [Troubleshooting](docs/troubleshooting.md) says to remove the
+  token before sharing such a log.
 
 ## Supported versions
 
