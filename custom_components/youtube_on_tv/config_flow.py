@@ -267,9 +267,16 @@ class YouTubeOnTvConfigFlow(ConfigFlow, domain=DOMAIN):
     def _async_update_reauth_entry(self, data: dict[str, Any]) -> ConfigFlowResult:
         # The screen id legitimately changes when YouTube rotates it, so the
         # entry's unique id is kept rather than compared.
-        return self.async_update_reload_and_abort(
-            self._get_reauth_entry(), data_updates=data
-        )
+        entry = self._get_reauth_entry()
+        self.hass.config_entries.async_update_entry(entry, data={**entry.data, **data})
+        # Not async_update_reload_and_abort: Home Assistant deprecates it for an
+        # entry with an update listener, and it becomes an error in 2026.12. The
+        # listener only redraws the entities, so the reload is scheduled here.
+        self.hass.config_entries.async_schedule_reload(entry.entry_id)
+        # The message comes from this integration's strings. Newer releases of
+        # the helper take it from core's, but async_abort has no
+        # translation_domain in 2026.3, the oldest release supported.
+        return self.async_abort(reason="reauth_successful")
 
 
 class TvOptionsFlow(OptionsFlow):
