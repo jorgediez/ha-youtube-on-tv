@@ -273,6 +273,9 @@ class YouTubeOnTvConfigFlow(ConfigFlow, domain=DOMAIN):
         # entry with an update listener, and it becomes an error in 2026.12. The
         # listener only redraws the entities, so the reload is scheduled here.
         self.hass.config_entries.async_schedule_reload(entry.entry_id)
+        # The message comes from this integration's strings. Newer releases of
+        # the helper take it from core's, but async_abort has no
+        # translation_domain in 2026.3, the oldest release supported.
         return self.async_abort(reason="reauth_successful")
 
 

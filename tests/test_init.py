@@ -136,6 +136,8 @@ async def test_reauth_reloads_the_entry(
     is deprecated for such an entry; it becomes an error in Home Assistant
     2026.12.
     """
+    # Core reports the deprecated call through its frame helper's logger.
+    caplog.set_level(logging.WARNING, logger="homeassistant.helpers.frame")
     result = await mock_config_entry.start_reauth_flow(hass)
     with patch(
         "custom_components.youtube_on_tv.config_flow.async_get_screen_from_host",
