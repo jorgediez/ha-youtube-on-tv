@@ -1169,9 +1169,17 @@ class YouTubeOnTvCoordinator(DataUpdateCoordinator[TvState]):
             return
         self._stale_asked_at = dt_util.utcnow()
         try:
-            await self.api.get_now_playing()
+            asked = await self.api.get_now_playing()
         except (*_CONNECTION_ERRORS, NotConnectedException) as err:
             LOGGER.debug("Error requesting now playing: %s", err)
+            return
+        if not asked:
+            # YouTube rejected the request instead of raising, so the TV was
+            # never asked and no answer is coming. Silence only means the
+            # player stopped when the question actually reached the TV.
+            LOGGER.debug(
+                "Asking %s what's playing wasn't accepted", self.config_entry.title
+            )
             return
         self._unsub_stale_reply = async_call_later(
             self.hass, STALE_REPLY_TIMEOUT, self._stale_reply_timeout
