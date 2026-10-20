@@ -1,11 +1,14 @@
 name: Validate
 
+# HACS and Hassfest, both required for inclusion in the HACS default list. The
+# weekly run catches rule changes upstream even when this repo is quiet.
 on:
   push:
     branches: [main]
   pull_request:
   schedule:
     - cron: "0 4 * * 1"
+  workflow_call:
   workflow_dispatch:
 
 permissions:

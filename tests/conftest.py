@@ -164,10 +164,14 @@ class FakeLounge:
         self._stop.clear()
 
 
-async def wait_for(condition, timeout: float = 5) -> None:
-    """Wait until condition() is true, for state set by background tasks."""
+async def wait_for(condition, timeout: float = 5) -> None:  # noqa: ASYNC109
+    """Wait until condition() is true, for state set by background tasks.
+
+    Polling on purpose: the conditions are arbitrary checks on integration
+    state, which signals nothing a test could wait on instead.
+    """
     async with asyncio.timeout(timeout):
-        while not condition():
+        while not condition():  # noqa: ASYNC110
             await asyncio.sleep(0.01)
 
 

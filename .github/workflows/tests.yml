@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_call:
   workflow_dispatch:
 
 permissions:
@@ -18,19 +19,39 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: "3.14"
-      - run: pip install -r requirements_test.txt
+      - run: pip install "$(grep '^ruff==' requirements_test.txt)"
       - run: ruff check .
       - run: ruff format --check .
 
   pytest:
-    name: Pytest
+    name: Pytest (HA ${{ matrix.name }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Oldest supported release, as in hacs.json. Dependabot only bumps
+          # requirements_test.txt, so this pin stays put.
+          - name: min  # 2026.3
+            python: "3.14"
+            harness: "pytest-homeassistant-custom-component==0.13.320"
+          # Newest release, as pinned in requirements_test.txt.
+          - name: latest
+            python: "3.14"
+            harness: ""
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
         with:
-          python-version: "3.14"
+          python-version: ${{ matrix.python }}
           cache: pip
           cache-dependency-path: requirements_test.txt
-      - run: pip install -r requirements_test.txt
+      - name: Install test requirements
+        run: |
+          if [ -n "${{ matrix.harness }}" ]; then
+            grep -v '^pytest-homeassistant-custom-component' requirements_test.txt > "$RUNNER_TEMP/requirements.txt"
+            pip install "${{ matrix.harness }}" -r "$RUNNER_TEMP/requirements.txt"
+          else
+            pip install -r requirements_test.txt
+          fi
       - run: pytest --cov --cov-report=term-missing

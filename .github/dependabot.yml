@@ -3,11 +3,17 @@ updates:
   - package-ecosystem: github-actions
     directory: /
     schedule:
-      interval: weekly
+      interval: monthly
+    groups:
+      github-actions:
+        patterns: ["*"]
   - package-ecosystem: pip
     directory: /
     schedule:
-      interval: weekly
+      interval: monthly
+    groups:
+      pip:
+        patterns: ["*"]
     ignore:
       # Mirrors the version Home Assistant pins, not the latest release.
       - dependency-name: async-upnp-client

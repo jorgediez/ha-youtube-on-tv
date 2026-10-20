@@ -43,11 +43,11 @@ python3.14 -m venv .venv
 .venv/bin/pytest --cov
 ```
 
-The Home Assistant test harness only runs on Linux and macOS. On Windows, use WSL.
+The Home Assistant test harness only runs on Linux and macOS. On Windows, use WSL, or `scripts/test-docker.sh`, which runs the suite in Docker against the oldest supported Home Assistant and the newest, as CI does.
 
 A pull request is expected to:
 
-- Pass `ruff check`, `ruff format --check` and the test suite. CI runs these, plus `hassfest`, and needs a maintainer to approve the first run on a fork.
+- Pass `ruff check`, `ruff format --check` and the test suite. CI runs these against the oldest supported Home Assistant and the newest, plus HACS and `hassfest`, and needs a maintainer to approve the first run on a fork.
 - Come with tests. Protocol behavior is best covered by replaying what a TV actually sent; `tests/test_entities.py` has examples taken from real captures.
 - Update the docs it affects, in [docs/](docs). The README stays an overview.
 - Explain, in the commit message, why the change is the way it is — particularly anything that works around how a TV behaves.
