@@ -1,0 +1,42 @@
+name: Device report
+description: Tell us how the integration does with your TV or streaming device.
+labels: [compatibility]
+body:
+  - type: input
+    id: device
+    attributes:
+      label: TV or streaming device
+      description: Brand and model of the device running YouTube.
+      placeholder: LG C3 (webOS), Chromecast with Google TV, Fire TV Stick 4K, ...
+    validations:
+      required: true
+  - type: dropdown
+    id: added
+    attributes:
+      label: How was it added?
+      description: Discovery and adding by IP address need the device to publish YouTube over DIAL.
+      options:
+        - Discovered
+        - IP address
+        - TV code (the others didn't work)
+        - TV code (didn't try the others)
+    validations:
+      required: true
+  - type: dropdown
+    id: result
+    attributes:
+      label: Does it work?
+      options:
+        - Everything works
+        - Partially (details below)
+        - Doesn't work
+    validations:
+      required: true
+  - type: textarea
+    id: details
+    attributes:
+      label: Details
+      description: >-
+        What works and what doesn't: playback state, title and thumbnail, controls,
+        ads and Skip ad, the queue, settings. Attaching the diagnostics helps:
+        Settings → Devices & services → YouTube on TV → ⋮ → Download diagnostics.

@@ -1,0 +1,59 @@
+name: Bug report
+description: Something doesn't work as expected.
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, and what happened instead?
+    validations:
+      required: true
+  - type: input
+    id: device
+    attributes:
+      label: TV or streaming device
+      description: Brand and model of the device running YouTube.
+      placeholder: Samsung QN900F, NVIDIA Shield TV, Apple TV 4K, ...
+    validations:
+      required: true
+  - type: dropdown
+    id: added
+    attributes:
+      label: How was it added?
+      options:
+        - Discovered
+        - IP address
+        - TV code
+    validations:
+      required: true
+  - type: input
+    id: integration_version
+    attributes:
+      label: Integration version
+    validations:
+      required: true
+  - type: input
+    id: ha_version
+    attributes:
+      label: Home Assistant version
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics
+      description: >-
+        Settings → Devices & services → YouTube on TV → ⋮ → Download diagnostics,
+        and attach the file. The screen id, the TV's address and what was being
+        watched are left out.
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: >-
+        Relevant lines from the Home Assistant log, with
+        `custom_components.youtube_on_tv: debug` if possible, and
+        `pyytlounge: debug` for events the library doesn't handle. That one
+        also logs the session token: remove it before posting.
+      render: text

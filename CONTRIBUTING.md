@@ -4,13 +4,15 @@ Thanks for looking. Reports from TVs other than the ones already listed are the 
 
 ## Reporting a device, or a problem
 
-The [community thread](https://community.home-assistant.io/t/youtube-on-tv-see-and-control-what-the-youtube-app-on-your-tv-is-playing/1026146) is the easiest place for "it works on X" or "X behaves oddly". Bugs are better as [issues](https://github.com/jorgediez/ha-youtube-on-tv/issues).
+The [community thread](https://community.home-assistant.io/t/youtube-on-tv-see-and-control-what-the-youtube-app-on-your-tv-is-playing/1026146) is the easiest place for "it works on X" or "X behaves oddly". Bugs are better as an [issue](https://github.com/jorgediez/ha-youtube-on-tv/issues/new/choose), where there is a form for bugs and one for telling us how the integration does on your device.
 
 What makes a report actionable:
 
-- The integration's diagnostics (*Settings → Devices & services → YouTube on TV → ⋮ → Download diagnostics*). It carries no secrets.
+- The integration's diagnostics (*Settings → Devices & services → YouTube on TV → ⋮ → Download diagnostics*). The screen id, the TV's address and what was being watched are left out.
 - A debug log covering the moment it went wrong, with `custom_components.youtube_on_tv: debug` in your `logger` settings. See [troubleshooting](docs/troubleshooting.md).
 - For a device that isn't discovered, the output of `scripts/dial_scan.py`. See [development](docs/development.md).
+
+A security problem should not go in an issue or the thread: see [SECURITY.md](SECURITY.md) for how to report it privately.
 
 ## What belongs here
 
