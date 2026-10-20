@@ -14,6 +14,7 @@ import aiohttp
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 from pytest_homeassistant_custom_component.typing import ClientSessionGenerator
+from pyytlounge import NowPlayingEvent, State
 from pyytlounge.exceptions import NotSupportedException
 
 from custom_components.youtube_on_tv.const import (
@@ -28,12 +29,16 @@ from homeassistant.helpers import device_registry as dr, entity_registry as er
 
 from .conftest import (
     ENTRY_DATA,
+    HOST,
     MOCK_SCREEN,
     NEW_SCREEN_ID,
     SCREEN_ID,
     FakeLounge,
     wait_for,
 )
+
+VIDEO_ID = "Yeke1krzPFM"
+NEXT_ID = "aqz-KE-bpKQ"
 
 MANIFEST = json.loads(
     (
@@ -169,7 +174,7 @@ async def test_diagnostics(
     init_integration: FakeLounge,
     mock_config_entry: MockConfigEntry,
 ) -> None:
-    """Diagnostics don't leak the screen id."""
+    """Diagnostics don't leak the screen id or the TV's address."""
     from pytest_homeassistant_custom_component.components.diagnostics import (
         get_diagnostics_for_config_entry,
     )
@@ -179,6 +184,8 @@ async def test_diagnostics(
     )
     assert diagnostics["entry"]["data"]["screen_id"] == "**REDACTED**"
     assert diagnostics["entry"]["unique_id"] == "**REDACTED**"
+    assert diagnostics["entry"]["data"]["host"] == "**REDACTED**"
+    assert diagnostics["entry"]["data"]["app_url"] == "**REDACTED**"
     assert diagnostics["lounge"] == {
         "linked": True,
         "connected": True,
@@ -189,7 +196,51 @@ async def test_diagnostics(
     assert diagnostics["versions"]["integration"] == MANIFEST["version"]
     assert diagnostics["state"]["status"] == "off"
     assert diagnostics["pending_state"]["status"] == "off"
+    # Nothing plays, so there is nothing to redact: None shows it is unset.
+    assert diagnostics["state"]["video_id"] is None
+    assert diagnostics["state"]["queue_length"] == 0
     assert SCREEN_ID not in str(diagnostics)
+    assert HOST not in str(diagnostics)
+
+
+async def test_diagnostics_leave_out_what_is_watched(
+    hass: HomeAssistant,
+    hass_client: ClientSessionGenerator,
+    init_integration: FakeLounge,
+    mock_config_entry: MockConfigEntry,
+) -> None:
+    """A report says something is playing and the queue's size, not what."""
+    from pytest_homeassistant_custom_component.components.diagnostics import (
+        get_diagnostics_for_config_entry,
+    )
+
+    coordinator = mock_config_entry.runtime_data
+    coordinator.handle_now_playing(
+        NowPlayingEvent(
+            {
+                "state": str(State.Playing.value),
+                "videoId": VIDEO_ID,
+                "currentTime": "86",
+                "duration": "237",
+            }
+        )
+    )
+    coordinator.handle_queue(
+        {"mdxExpandedReceiverVideoIdList": f"{VIDEO_ID},{NEXT_ID}"}
+    )
+    await wait_for(lambda: coordinator.data.title is not None)
+
+    diagnostics = await get_diagnostics_for_config_entry(
+        hass, hass_client, mock_config_entry
+    )
+    state = diagnostics["state"]
+    assert state["status"] == "playing"
+    for key in ("video_id", "title", "channel"):
+        assert state[key] == "**REDACTED**", key
+    assert state["queue_length"] == 2
+    assert "queue" not in state
+    for private in (VIDEO_ID, NEXT_ID, "Dolor y Gloria", "VivaSueciaVEVO"):
+        assert private not in str(diagnostics), private
 
 
 async def test_one_device_per_tv(

@@ -1,6 +1,7 @@
 # YouTube on TV
 
 [![HACS Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://hacs.xyz/docs/faq/custom_repositories)
+[![Release](https://img.shields.io/github/v/release/jorgediez/ha-youtube-on-tv)](https://github.com/jorgediez/ha-youtube-on-tv/releases)
 [![Validate](https://github.com/jorgediez/ha-youtube-on-tv/actions/workflows/validate.yml/badge.svg)](https://github.com/jorgediez/ha-youtube-on-tv/actions/workflows/validate.yml)
 [![Tests](https://github.com/jorgediez/ha-youtube-on-tv/actions/workflows/tests.yml/badge.svg)](https://github.com/jorgediez/ha-youtube-on-tv/actions/workflows/tests.yml)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
@@ -68,12 +69,12 @@ Each TV becomes its own device named **YouTube on _TV name_**, so its entities (
 - [Entities](https://github.com/jorgediez/ha-youtube-on-tv/blob/main/docs/entities.md) — everything the integration creates, and what each one reports
 - [Automations](https://github.com/jorgediez/ha-youtube-on-tv/blob/main/docs/automations.md) — skipping and muting ads, playing a video, taking a Shorts break
 - [How it behaves](https://github.com/jorgediez/ha-youtube-on-tv/blob/main/docs/behavior.md) — player states, Shorts, and what the protocol doesn't offer
-- [Troubleshooting](https://github.com/jorgediez/ha-youtube-on-tv/blob/main/docs/troubleshooting.md) — re-authentication, discovery, outages, debug logs
+- [Troubleshooting](https://github.com/jorgediez/ha-youtube-on-tv/blob/main/docs/troubleshooting.md) — re-authentication, discovery, outages, debug logs, removing the integration
 - [Development](https://github.com/jorgediez/ha-youtube-on-tv/blob/main/docs/development.md) — tests, and the diagnostic scripts for a new device
 
 ## Privacy
 
-- The TV's screen id is stored in Home Assistant. It works like a password for controlling the TV's YouTube app, so it's redacted from diagnostics.
+- The TV's screen id is stored in Home Assistant. It works like a password for controlling the TV's YouTube app, so it's redacted from diagnostics, along with the TV's address and what was being watched.
 - The integration talks to `www.youtube.com` (the Lounge API and oEmbed) and `i.ytimg.com` (thumbnails).
 
 ## Credits

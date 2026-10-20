@@ -36,6 +36,16 @@ logger:
 
 Add `pyytlounge: debug` as well to see events the library doesn't handle. That also logs the session token, so remove it before sharing the log.
 
+## Removing the integration
+
+1. In *Settings → Devices & services → YouTube on TV*, select **⋮ → Delete** on each TV.
+2. If you installed through HACS, remove **YouTube on TV** there; otherwise delete `config/custom_components/youtube_on_tv/`.
+3. Restart Home Assistant.
+
+The TV's YouTube app may still list Home Assistant as a linked device. Where the app's settings offer to unlink devices, that removes it.
+
 ## Reporting a problem
 
-[Open an issue](https://github.com/jorgediez/ha-youtube-on-tv/issues) with the integration's diagnostics (*Settings → Devices & services → YouTube on TV → ⋮ → Download diagnostics*), which has no secrets in it, and the debug log above if the problem involves playback. Questions and device reports are welcome in the [community thread](https://community.home-assistant.io/t/youtube-on-tv-see-and-control-what-the-youtube-app-on-your-tv-is-playing/1026146).
+[Open an issue](https://github.com/jorgediez/ha-youtube-on-tv/issues/new/choose) with the integration's diagnostics (*Settings → Devices & services → YouTube on TV → ⋮ → Download diagnostics*), and the debug log above if the problem involves playback. The diagnostics leave out the screen id, the TV's address and what was being watched. Questions and device reports are welcome in the [community thread](https://community.home-assistant.io/t/youtube-on-tv-see-and-control-what-the-youtube-app-on-your-tv-is-playing/1026146).
+
+A security problem should not go in an issue or the thread: see [SECURITY.md](../SECURITY.md) for how to report it privately.

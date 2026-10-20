@@ -5,12 +5,29 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+import tomllib
 
 import pytest
 
 from homeassistant.const import MAJOR_VERSION, MINOR_VERSION
 
 REPO = Path(__file__).resolve().parents[1]
+
+
+def test_the_version_is_declared_once():
+    """manifest.json and pyproject.toml carry the same version.
+
+    HACS shows the manifest's; a mismatch here would otherwise surface only
+    when a release is tagged.
+    """
+    manifest = json.loads(
+        (REPO / "custom_components" / "youtube_on_tv" / "manifest.json").read_text(
+            "utf-8"
+        )
+    )
+    project = tomllib.loads((REPO / "pyproject.toml").read_text("utf-8"))
+
+    assert manifest["version"] == project["project"]["version"]
 
 
 def _minimum_home_assistant() -> tuple[int, int]:

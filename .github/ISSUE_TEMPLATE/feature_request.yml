@@ -1,0 +1,13 @@
+name: Feature request
+description: Suggest an improvement.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would you like?
+      description: >-
+        What the protocol can and can't do is in docs/behavior.md, under "What
+        the protocol doesn't offer".
+    validations:
+      required: true
