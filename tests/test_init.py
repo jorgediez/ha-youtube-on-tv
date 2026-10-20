@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import replace
 from datetime import timedelta
 import json
 import logging
@@ -22,9 +23,17 @@ from custom_components.youtube_on_tv.const import (
 )
 from homeassistant.config_entries import SOURCE_REAUTH, ConfigEntryState
 from homeassistant.core import HomeAssistant
+from homeassistant.data_entry_flow import FlowResultType
 from homeassistant.helpers import device_registry as dr, entity_registry as er
 
-from .conftest import ENTRY_DATA, SCREEN_ID, FakeLounge, wait_for
+from .conftest import (
+    ENTRY_DATA,
+    MOCK_SCREEN,
+    NEW_SCREEN_ID,
+    SCREEN_ID,
+    FakeLounge,
+    wait_for,
+)
 
 
 async def test_setup_and_unload(
@@ -112,6 +121,35 @@ async def test_revoked_while_running(
         lambda: len(hass.config_entries.flow.async_progress_by_handler(DOMAIN)) == 1
     )
     assert init_integration.pair_with_screen_id.await_count == 4
+
+
+async def test_reauth_reloads_the_entry(
+    hass: HomeAssistant,
+    init_integration: FakeLounge,
+    mock_lounge: list[FakeLounge],
+    mock_config_entry: MockConfigEntry,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Reauth of a running entry reloads it with the new screen id.
+
+    A loaded entry has an update listener, and async_update_reload_and_abort
+    is deprecated for such an entry; it becomes an error in Home Assistant
+    2026.12.
+    """
+    result = await mock_config_entry.start_reauth_flow(hass)
+    with patch(
+        "custom_components.youtube_on_tv.config_flow.async_get_screen_from_host",
+        return_value=replace(MOCK_SCREEN, screen_id=NEW_SCREEN_ID),
+    ):
+        result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "reauth_successful"
+    await hass.async_block_till_done()
+
+    assert mock_config_entry.data[CONF_SCREEN_ID] == NEW_SCREEN_ID
+    assert mock_config_entry.state is ConfigEntryState.LOADED
+    assert len(mock_lounge) == 2, "the entry was not reloaded"
+    assert "update listener" not in caplog.text
 
 
 async def test_diagnostics(
