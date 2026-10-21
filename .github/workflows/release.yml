@@ -1,0 +1,39 @@
+name: Release
+
+# HACS installs the integration straight from the release's tag, so there is
+# nothing to build. This checks the tag names the version the code declares,
+# then runs the same checks as a pull request. The tests and hassfest check out
+# the tagged code; the HACS action checks out nothing and validates the
+# repository through GitHub's API, as GitHub has it at the time.
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  version:
+    name: Check the tag matches the version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Compare the tag with manifest.json and pyproject.toml
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          manifest="$(python3 -c "import json; print(json.load(open('custom_components/youtube_on_tv/manifest.json'))['version'])")"
+          project="$(python3 -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])")"
+          if [ "$tag" != "$manifest" ] || [ "$tag" != "$project" ]; then
+            echo "::error::Release tag $GITHUB_REF_NAME does not match manifest.json ($manifest) and pyproject.toml ($project)"
+            exit 1
+          fi
+
+  tests:
+    name: Tests
+    needs: version
+    uses: ./.github/workflows/tests.yml
+
+  validate:
+    name: Validate
+    needs: version
+    uses: ./.github/workflows/validate.yml
