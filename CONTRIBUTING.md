@@ -60,6 +60,12 @@ Keep a pull request to one subject. Two unrelated improvements are two pull requ
 
 Follow [Home Assistant's own conventions](https://developers.home-assistant.io/docs/development_guidelines) and the code already here: entity names and errors translated, no blocking calls in the event loop, comments that say why rather than what.
 
+## Releasing
+
+1. Bump `version` in `custom_components/youtube_on_tv/manifest.json` and in `pyproject.toml`. A test checks they match.
+2. Publish a GitHub release tagged `vX.Y.Z`, with notes for users. HACS installs from that tag.
+3. The **Release** workflow checks the tag matches both files, then runs the tests and the HACS and hassfest validation against the tagged code.
+
 ## License
 
 Contributions are under [GPL-3.0](LICENSE), like the rest of the project.
