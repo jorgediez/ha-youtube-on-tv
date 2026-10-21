@@ -1,6 +1,6 @@
 # YouTube on TV
 
-[![HACS Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://hacs.xyz/docs/faq/custom_repositories)
+[![HACS Default](https://img.shields.io/badge/HACS-Default-41BDF5.svg)](https://hacs.xyz)
 [![Release](https://img.shields.io/github/v/release/jorgediez/ha-youtube-on-tv)](https://github.com/jorgediez/ha-youtube-on-tv/releases)
 [![Validate](https://github.com/jorgediez/ha-youtube-on-tv/actions/workflows/validate.yml/badge.svg)](https://github.com/jorgediez/ha-youtube-on-tv/actions/workflows/validate.yml)
 [![Tests](https://github.com/jorgediez/ha-youtube-on-tv/actions/workflows/tests.yml/badge.svg)](https://github.com/jorgediez/ha-youtube-on-tv/actions/workflows/tests.yml)
@@ -49,8 +49,8 @@ YouTube Kids is not supported: while a kids profile is on screen the entities ar
 
 [![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=jorgediez&repository=ha-youtube-on-tv&category=integration)
 
-1. In HACS, open the menu (⋮) → **Custom repositories**, add `https://github.com/jorgediez/ha-youtube-on-tv` with type **Integration**.
-2. Download **YouTube on TV** and restart Home Assistant.
+1. In HACS, search for **YouTube on TV** and open it, or use the button above.
+2. Select **Download**, then restart Home Assistant.
 
 Or copy `custom_components/youtube_on_tv` into your Home Assistant `config/custom_components/` folder and restart. Requires Home Assistant 2026.3 or newer.
 
