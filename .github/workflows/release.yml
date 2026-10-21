@@ -2,7 +2,9 @@ name: Release
 
 # HACS installs the integration straight from the release's tag, so there is
 # nothing to build. This checks the tag names the version the code declares,
-# then runs the same checks as a pull request against the tagged code.
+# then runs the same checks as a pull request. The tests and hassfest check out
+# the tagged code; the HACS action checks out nothing and validates the
+# repository through GitHub's API, as GitHub has it at the time.
 on:
   release:
     types: [published]
