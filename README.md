@@ -37,9 +37,10 @@ Any device whose YouTube app supports "Link with TV code" should work.
 | **Samsung Tizen** (other model) | Works, including Skip ad | [Nik_Fiend](https://community.home-assistant.io/u/nik_fiend) |
 | **Onn 4K Android TV box** | Works, including Skip ad. Added with a TV code; discovery didn't find it | [j_quadrifrons](https://community.home-assistant.io/u/j_quadrifrons) |
 | **NVIDIA Shield TV** | Playback, title, channel and thumbnail all shown. Added with a TV code; adding by IP address didn't work. Ads untested (YouTube Premium) | [kahilzinger](https://community.home-assistant.io/u/kahilzinger) |
+| **LG webOS** (OLED55B7V, 2017) | Everything works, added by IP address. The **Ad playing** sensor can be slow to turn on | [Sarge1980](https://github.com/Sarge1980) |
 | **Apple TV 4K** | Playback, controls and the queue all work. Added with a TV code: it publishes no DIAL at all, and its YouTube app closes whenever another app comes to the front | [davbebawy](https://github.com/davbebawy) |
 
-LG webOS, Chromecast with Google TV, Fire TV and Roku use the same protocol but haven't been reported on yet.
+Chromecast with Google TV, Fire TV and Roku use the same protocol but haven't been reported on yet.
 
 **Android TV devices and the Apple TV need a TV code.** A Xiaomi Mi Box was checked with `scripts/dial_scan.py`: it publishes DIAL, but its DIAL server registers no YouTube app even while YouTube is playing, so there's no screen id to discover and no local address to use. The Shield and Onn behaved the same way, and an Apple TV publishes no DIAL at all. Everything works once added with a code, except what needs the TV's address: the **App state** sensor, and closing YouTube. Such a TV can still open YouTube, and play a video while the app is closed, through [open actions](https://github.com/jorgediez/ha-youtube-on-tv/blob/main/docs/automations.md#open-youtube-on-a-tv-added-with-a-code) you configure for it.
 
