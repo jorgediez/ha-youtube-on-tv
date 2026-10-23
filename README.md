@@ -6,7 +6,7 @@
 [![Tests](https://github.com/jorgediez/ha-youtube-on-tv/actions/workflows/tests.yml/badge.svg)](https://github.com/jorgediez/ha-youtube-on-tv/actions/workflows/tests.yml)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
 
-A Home Assistant integration that shows what the **YouTube app on your TV** is playing — video, title, channel, thumbnail, play/pause state and position — and lets you control playback.
+A Home Assistant integration to see and control the **YouTube app on your TV**: what's playing — title, channel, thumbnail, state and position — plus playback and the queue. Ads too: an **Ad playing** sensor to mute the TV with, and a **Skip ad** button that presses skip the moment YouTube offers it.
 
 It connects to the TV the same way the YouTube phone app does when you cast (YouTube's "Lounge" protocol, via [pyytlounge](https://github.com/FabioGNR/pyytlounge)). Updates are pushed by the TV instantly; nothing is polled from YouTube, and no Google account or API key is needed.
 
