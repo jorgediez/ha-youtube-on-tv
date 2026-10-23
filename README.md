@@ -6,7 +6,7 @@
 [![Tests](https://github.com/jorgediez/ha-youtube-on-tv/actions/workflows/tests.yml/badge.svg)](https://github.com/jorgediez/ha-youtube-on-tv/actions/workflows/tests.yml)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
 
-A Home Assistant integration that shows what the **YouTube app on your TV** is playing — video, title, channel, thumbnail, play/pause state and position — and lets you control playback.
+A Home Assistant integration to see and control the **YouTube app on your TV**: what's playing — title, channel, thumbnail, state and position — plus playback and the queue. Ads too: an **Ad playing** sensor to mute the TV with, and a **Skip ad** button that presses skip the moment YouTube offers it.
 
 It connects to the TV the same way the YouTube phone app does when you cast (YouTube's "Lounge" protocol, via [pyytlounge](https://github.com/FabioGNR/pyytlounge)). Updates are pushed by the TV instantly; nothing is polled from YouTube, and no Google account or API key is needed.
 
@@ -39,10 +39,12 @@ Any device whose YouTube app supports "Link with TV code" should work.
 | **NVIDIA Shield TV** | Playback, title, channel and thumbnail all shown. Added with a TV code; adding by IP address didn't work. Ads untested (YouTube Premium) | [kahilzinger](https://community.home-assistant.io/u/kahilzinger) |
 | **LG webOS** (OLED55B7V, 2017) | Everything works, added by IP address. The **Ad playing** sensor can be slow to turn on | [Sarge1980](https://github.com/Sarge1980) |
 | **Apple TV 4K** | Playback, controls and the queue all work. Added with a TV code: it publishes no DIAL at all, and its YouTube app closes whenever another app comes to the front | [davbebawy](https://github.com/davbebawy) |
+| **TCL Roku TV** | Works, ads included. The **Ad playing** sensor can be a few seconds late | |
+| **Chromecast with Google TV 4K** | Playback, Skip ad, subtitles, title and position all work. Added with a TV code; adding by IP address didn't work | [nwo122383](https://www.reddit.com/user/nwo122383) |
 
-Chromecast with Google TV, Fire TV and Roku use the same protocol but haven't been reported on yet.
+Fire TV uses the same protocol but hasn't been reported on yet.
 
-**Android TV devices and the Apple TV need a TV code.** A Xiaomi Mi Box was checked with `scripts/dial_scan.py`: it publishes DIAL, but its DIAL server registers no YouTube app even while YouTube is playing, so there's no screen id to discover and no local address to use. The Shield and Onn behaved the same way, and an Apple TV publishes no DIAL at all. Everything works once added with a code, except what needs the TV's address: the **App state** sensor, and closing YouTube. Such a TV can still open YouTube, and play a video while the app is closed, through [open actions](https://github.com/jorgediez/ha-youtube-on-tv/blob/main/docs/automations.md#open-youtube-on-a-tv-added-with-a-code) you configure for it.
+**Android TV devices and the Apple TV need a TV code.** A Xiaomi Mi Box was checked with `scripts/dial_scan.py`: it publishes DIAL, but its DIAL server registers no YouTube app even while YouTube is playing, so there's no screen id to discover and no local address to use. The Shield and Onn behaved the same way, an Apple TV publishes no DIAL at all, and a Chromecast with Google TV wouldn't be added by IP address either. Everything works once added with a code, except what needs the TV's address: the **App state** sensor, and closing YouTube. Such a TV can still open YouTube, and play a video while the app is closed, through [open actions](https://github.com/jorgediez/ha-youtube-on-tv/blob/main/docs/automations.md#open-youtube-on-a-tv-added-with-a-code) you configure for it.
 
 YouTube Kids is not supported: while a kids profile is on screen the entities are unavailable, and they come back by themselves afterwards.
 
