@@ -45,6 +45,8 @@ automation:
           is_volume_muted: "{{ trigger.id == 'mute' }}"
 ```
 
+It doesn't remember what the TV was before the ad, so an ad that starts while the TV is already muted leaves it unmuted at the end, and muting or unmuting by hand during an ad is overridden as well. Covering those cases means remembering the previous state: a scene snapshotted when the ad starts, or a helper recording whether this automation was the one that muted. How well that works depends on your TV's own integration — some send mute as a toggle rather than setting it, so replaying a snapshot that says "muted" unmutes instead, and the automation has to compare with the current state and only send a change when the two differ.
+
 ## Play a video
 
 `media_player.play_media` takes a video id or any YouTube video URL (`youtube.com/watch`, `youtu.be`, Shorts or live links):
