@@ -49,6 +49,7 @@ The **Skip ad** button does what pressing skip on the remote does: it works once
 
 - Autoplay, playback speed and subtitles are known only once the TV reports them, so they show as unknown until then. The TV reports them when they change, so they're kept across videos and while playback is stopped. Up next belongs to the current video and is cleared with it.
 - Changing autoplay or the playback speed from Home Assistant updates the entity at once, because the TV can take a few seconds to apply the change and report it back. If the TV then reports something different, its value wins.
+- The **Subtitles** switch turns subtitles back on in the language last used, and the only languages it can send are ones the TV has reported. On a device where subtitles have never been on, turning the switch on answers "No subtitles language is known yet. Turn subtitles on once on the TV." Do that once in the YouTube app and the switch works from then on.
 
 ## What the protocol doesn't offer
 
