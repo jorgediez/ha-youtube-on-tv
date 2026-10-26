@@ -55,5 +55,6 @@ body:
         Relevant lines from the Home Assistant log, with
         `custom_components.youtube_on_tv: debug` if possible, and
         `pyytlounge: debug` for events the library doesn't handle. That one
-        also logs the session token: remove it before posting.
+        also logs the session token, on every `lounge id` line and with a
+        new value after each auth refresh: replace them all before posting.
       render: text
