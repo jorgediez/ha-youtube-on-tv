@@ -48,6 +48,23 @@ STALE_REPLY_TIMEOUT: Final = 10
 # end is assumed to have stopped.
 POSITION_OVERRUN: Final = 30
 
+# An ad ending is published this many seconds later. A TV marks the end of
+# every ad in a break, announcing the next one up to a second afterwards, so
+# publishing at once would turn the ad sensor off and straight back on between
+# the ads of one break.
+AD_END_GRACE: Final = 2.0
+
+# A playback position this far into a video means the video itself is back
+# after an ad, rather than another ad of the same break starting from zero.
+AD_RESUME_POSITION: Final = 1.0
+
+# An ad is assumed over this many seconds past the duration the TV reported
+# for it, and after AD_MAX_AD_SECONDS when no duration came with it. A TV that
+# announces an ad and never says it ended would otherwise leave the ad sensor
+# on for good, and an automation following it would leave the TV muted.
+AD_OVERRUN: Final = 5.0
+AD_MAX_AD_SECONDS: Final = 120.0
+
 # Option of a TV entry: actions that open YouTube on the TV, for TVs without
 # DIAL (added with a TV code), e.g. wake a streaming box and pick the app.
 # The Lounge protocol can't start the app itself.
