@@ -10,6 +10,7 @@ import pytest
 from pytest_homeassistant_custom_component.common import (
     MockConfigEntry,
     async_fire_time_changed,
+    async_fire_time_changed_exact,
 )
 from pyytlounge import AdPlayingEvent, AdStateEvent, NowPlayingEvent, State
 
@@ -96,6 +97,19 @@ async def _wait(
     """Let the wait for another ad of the same break run out."""
     freezer.tick(timedelta(seconds=seconds + 0.1))
     async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+
+
+async def _gap(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory, seconds: float
+) -> None:
+    """Pass the time between two events without any wait running out.
+
+    async_fire_time_changed fires whatever is due within the next half
+    second, which is more slack than the gaps being replayed here.
+    """
+    freezer.tick(timedelta(seconds=seconds))
+    async_fire_time_changed_exact(hass)
     await hass.async_block_till_done()
 
 
@@ -408,8 +422,9 @@ async def test_skip_ad_unavailable_after_skipping(
     hass: HomeAssistant,
     init_integration: FakeLounge,
     mock_config_entry: MockConfigEntry,
+    freezer: FrozenDateTimeFactory,
 ) -> None:
-    """A skipped ad turns the button and the sensor off."""
+    """A skipped ad takes the button away at once and the sensor shortly after."""
     coordinator = mock_config_entry.runtime_data
     coordinator.handle_now_playing(
         NowPlayingEvent(
@@ -423,6 +438,68 @@ async def test_skip_ad_unavailable_after_skipping(
     coordinator.handle_ad_state(State.AdSkipped, False)
     await hass.async_block_till_done()
     assert hass.states.get(SKIP_AD_ID).state == STATE_UNAVAILABLE
+
+    await _wait(hass, freezer)
+    assert hass.states.get(AD_SENSOR_ID).state == STATE_OFF
+
+
+async def test_ad_skipped_in_the_middle_of_a_break(
+    hass: HomeAssistant,
+    init_integration: FakeLounge,
+    mock_config_entry: MockConfigEntry,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """An ad skipped with another one behind it keeps the sensor on.
+
+    A Samsung QN900F announced the next ad 0.65 seconds after the skip. The
+    sensor used to drop in that gap, and an automation muting the TV from it
+    ran its unmute instead of muting the ad that had just started.
+    """
+    coordinator = mock_config_entry.runtime_data
+    listener = init_integration.listener
+    coordinator.handle_now_playing(_playing("298.269", "721.561"))
+    states = _record_ad_sensor(hass)
+    await listener.ad_playing_changed(_ad_playing(duration="10.021"))
+    coordinator.handle_ad_state(State.Playing, True)
+    await hass.async_block_till_done()
+    assert hass.states.get(AD_SENSOR_ID).state == STATE_ON
+
+    coordinator.handle_ad_state(State.AdSkipped, False)
+    await hass.async_block_till_done()
+    await _gap(hass, freezer, 0.65)
+    await listener.ad_playing_changed(_ad_playing(duration="18.061"))
+    await hass.async_block_till_done()
+    await _gap(hass, freezer, 2)
+    assert hass.states.get(AD_SENSOR_ID).state == STATE_ON
+    assert states == [STATE_ON]
+
+    # The second ad is skipped too, and the video it interrupted comes back.
+    coordinator.handle_ad_state(State.AdSkipped, False)
+    coordinator.handle_playback_state(State.Starting, 298.269, 721.561)
+    await hass.async_block_till_done()
+    assert hass.states.get(AD_SENSOR_ID).state == STATE_OFF
+    assert states == [STATE_ON, STATE_OFF]
+
+
+async def test_the_video_coming_back_turns_the_sensor_off_at_once(
+    hass: HomeAssistant,
+    init_integration: FakeLounge,
+    mock_config_entry: MockConfigEntry,
+) -> None:
+    """A video reported as "starting" again publishes the end of the ad.
+
+    That state is short-lived and otherwise settles before being published,
+    which left the sensor on for another second and a half.
+    """
+    coordinator = mock_config_entry.runtime_data
+    coordinator.handle_now_playing(_playing("933.982", "1721.761"))
+    await init_integration.listener.ad_playing_changed(_ad_playing(duration="20.021"))
+    await hass.async_block_till_done()
+    assert hass.states.get(AD_SENSOR_ID).state == STATE_ON
+
+    coordinator.handle_ad_state(State.Buffering, False)
+    coordinator.handle_playback_state(State.Starting, 933.982, 1721.761)
+    await hass.async_block_till_done()
     assert hass.states.get(AD_SENSOR_ID).state == STATE_OFF
 
 
@@ -463,12 +540,15 @@ async def test_ad_pod_from_a_real_tv(
     hass: HomeAssistant,
     init_integration: FakeLounge,
     mock_config_entry: MockConfigEntry,
+    freezer: FrozenDateTimeFactory,
 ) -> None:
     """Replay a captured ad break: one On, one Off, nothing in between.
 
     The TV sends a last "Advertisement" playback state 4 ms after the ad is
     skipped, carrying the video's duration, which used to turn the sensor
-    back on for a second.
+    back on for a second. The video then starts from the beginning, which is
+    what another ad of the same break would look like, so the end of the
+    break is published once the wait for one runs out.
     """
     coordinator = mock_config_entry.runtime_data
     listener = init_integration.listener
@@ -520,7 +600,9 @@ async def test_ad_pod_from_a_real_tv(
     coordinator.handle_playback_state(State.Stopped, 0.0, 224.861)
     coordinator.handle_playback_state(State.Playing, 0.091, 224.861)
     await hass.async_block_till_done()
+    assert hass.states.get(SKIP_AD_ID).state == STATE_UNAVAILABLE
 
+    await _wait(hass, freezer)
     assert hass.states.get(AD_SENSOR_ID).state == STATE_OFF
     assert hass.states.get(SKIP_AD_ID).state == STATE_UNAVAILABLE
     assert states == [STATE_ON, STATE_OFF]

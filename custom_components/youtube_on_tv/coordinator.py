@@ -1040,12 +1040,16 @@ class YouTubeOnTvCoordinator(DataUpdateCoordinator[TvState]):
         # Stopped, Starting, Buffering, Cued, AdSkipped: short-lived states seen
         # while loading, seeking and between ads and content.
         new = replace(current, status=PlayerStatus.BUFFERING)
-        if state is State.AdSkipped or (
+        ad_over = state is State.AdSkipped or (
             state is State.Starting and self._resumed_content(current_time)
-        ):
+        )
+        if ad_over:
             self._cancel_ad_timers()
             new = replace(new, ad_playing=False, ad_skippable=False)
-        self._update(new, immediate=False)
+        # These states are short-lived, so they settle before being published,
+        # except for the end of an ad: whatever follows the ad sensor should
+        # not be kept waiting.
+        self._update(new, immediate=ad_over)
 
     @callback
     def _resumed_content(self, position: float | None) -> bool:
@@ -1084,10 +1088,7 @@ class YouTubeOnTvCoordinator(DataUpdateCoordinator[TvState]):
         """Handle an ad state change."""
         self._last_event_at = dt_util.utcnow()
         self._seen_ad_event = True
-        if ad_state is State.AdSkipped:
-            self._cancel_ad_timers()
-            new = replace(self._state, ad_playing=False, ad_skippable=False)
-        elif ad_state in _AD_RUNNING_STATES:
+        if ad_state in _AD_RUNNING_STATES:
             # Whether the skip button is up is reported separately from the ad
             # state, so it is trusted as sent.
             self._cancel_ad_end()
@@ -1101,6 +1102,9 @@ class YouTubeOnTvCoordinator(DataUpdateCoordinator[TvState]):
             # later. Publishing the end at once would drop the sensor between
             # them, and the trailing events of a finished ad arrive after
             # playback has resumed, so the end waits for what follows it.
+            # Skipping an ad is such an end: on a Samsung QN900F the next ad
+            # of the break was announced 0.65 seconds after the skip, and
+            # clearing at once there left the following ad unmuted.
             self._schedule_ad_end()
             new = replace(self._state, ad_skippable=skip_enabled)
         self._update(new, immediate=True)

@@ -51,8 +51,9 @@ POSITION_OVERRUN: Final = 30
 # An ad ending is published this many seconds later. A TV marks the end of
 # every ad in a break, announcing the next one up to a second afterwards, so
 # publishing at once would turn the ad sensor off and straight back on between
-# the ads of one break.
-AD_END_GRACE: Final = 2.0
+# the ads of one break. The longest gap measured on a Samsung QN900F, over
+# fifteen ads, was 0.95 seconds.
+AD_END_GRACE: Final = 1.25
 
 # A playback position this far into a video means the video itself is back
 # after an ad, rather than another ad of the same break starting from zero.
