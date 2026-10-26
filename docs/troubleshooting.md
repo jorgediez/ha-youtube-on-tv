@@ -24,6 +24,14 @@ The integration keeps retrying on its own, waiting a little longer after each at
 
 The **YouTube session** sensor's history shows exactly when the connection dropped and came back. A session that stays down for more than five minutes is logged as a warning naming the reason, with a matching message when it reconnects.
 
+## Another app keeps taking over the session
+
+Before **v1.2.0**, another YouTube "lounge" client on the same TV — iSponsorBlockTV, say — disconnected this integration as soon as it connected, and the two kept knocking each other off. The entities went unavailable or stopped updating while the TV carried on playing.
+
+Updating to [v1.2.0](https://github.com/jorgediez/ha-youtube-on-tv/releases) or newer fixes it: each client now identifies itself to YouTube separately, so both stay connected. Nothing to configure, and no re-pairing.
+
+A phone or tablet casting to the TV was never affected, because the YouTube app always sent an id of its own.
+
 ## The ad sensor or skip button behaves oddly
 
 Ad reporting differs between TVs. Turn on debug logging, let an ad play, and the log will show every event the TV sent, which is what a report needs:
