@@ -9,7 +9,7 @@
   "iot_class": "cloud_push",
   "issue_tracker": "https://github.com/jorgediez/ha-youtube-on-tv/issues",
   "loggers": ["pyytlounge"],
-  "requirements": ["pyytlounge==3.4.0"],
+  "requirements": ["pyytlounge==3.5.0"],
   "ssdp": [
     {
       "st": "urn:dial-multiscreen-org:service:dial:1"
