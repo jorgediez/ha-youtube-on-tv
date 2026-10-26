@@ -42,7 +42,14 @@ logger:
     custom_components.youtube_on_tv: debug
 ```
 
-Add `pyytlounge: debug` as well to see events the library doesn't handle. That also logs the session token, so remove the token before sharing the log.
+Add `pyytlounge: debug` as well to see events the library doesn't handle. That also logs the session token, on two lines:
+
+```text
+Subscribing to lounge id <token>
+Refreshed auth, lounge id token <token>
+```
+
+Replace the token on **every** such line before sharing the log. One session usually holds more than one token, a fresh one each time the auth is refreshed, so searching for the first value you find is not enough — search for `lounge id` instead.
 
 ## Removing the integration
 
