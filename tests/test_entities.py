@@ -726,6 +726,164 @@ async def test_ad_break_the_tv_never_reports_as_running(
     assert states == [STATE_ON, STATE_OFF]
 
 
+async def test_the_video_position_ends_the_ad(
+    hass: HomeAssistant,
+    init_integration: FakeLounge,
+    mock_config_entry: MockConfigEntry,
+) -> None:
+    """A break ends when the TV reports a position past the end of the ad.
+
+    The video comes back labelled as an advertisement still, carrying its own
+    position: 193 seconds into the video while the ad was 15 seconds long.
+    Nothing can follow that, so the end is published without waiting.
+    """
+    coordinator = mock_config_entry.runtime_data
+    coordinator.handle_now_playing(_playing("193.143", "561.781"))
+    await init_integration.listener.ad_playing_changed(_ad_playing(duration="15.041"))
+    await hass.async_block_till_done()
+    assert hass.states.get(AD_SENSOR_ID).state == STATE_ON
+
+    coordinator.handle_ad_state(State.Buffering, False)
+    coordinator.handle_playback_state(State.Advertisement, 193.143, 562.0)
+    await hass.async_block_till_done()
+    assert hass.states.get(AD_SENSOR_ID).state == STATE_OFF
+
+
+async def test_a_skip_at_the_end_of_the_video_does_not_blink(
+    hass: HomeAssistant,
+    init_integration: FakeLounge,
+    mock_config_entry: MockConfigEntry,
+) -> None:
+    """An ad skipped on the last second of a video leaves the sensor alone.
+
+    The TV then reports the video's position as its full length, which is
+    past any ad, and a millisecond later announces the ad just skipped once
+    more. Reading that position as the video resuming turned the sensor off
+    and back on in the same millisecond. The player going idle, which the TV
+    reports a tenth of a second later, is what ends this break.
+    """
+    coordinator = mock_config_entry.runtime_data
+    listener = init_integration.listener
+    coordinator.handle_now_playing(_playing("855", "873.601"))
+    states = _record_ad_sensor(hass)
+    await listener.ad_playing_changed(_ad_playing(duration="17.741"))
+    await hass.async_block_till_done()
+    assert hass.states.get(AD_SENSOR_ID).state == STATE_ON
+
+    coordinator.handle_ad_state(State.AdSkipped, False)
+    coordinator.handle_now_playing(
+        NowPlayingEvent(
+            {
+                "videoId": VIDEO_ID,
+                "state": "1081",
+                "currentTime": "873.601",
+                "duration": "873.601",
+            }
+        )
+    )
+    await listener.ad_playing_changed(_ad_playing("1", duration="17.741"))
+    await hass.async_block_till_done()
+    assert states == [STATE_ON]
+
+    coordinator.handle_now_playing(NowPlayingEvent({}))
+    await hass.async_block_till_done()
+    assert states == [STATE_ON, STATE_OFF]
+
+
+async def test_a_position_inside_the_ad_is_the_ad_itself(
+    hass: HomeAssistant,
+    init_integration: FakeLounge,
+    mock_config_entry: MockConfigEntry,
+) -> None:
+    """An ad reporting its own progress must not be taken for the video.
+
+    A TV sends "now playing" during an ad with the ad's position, which is
+    how far into the ad it is, so it has to be read against the ad's length
+    and not against a fixed threshold.
+    """
+    coordinator = mock_config_entry.runtime_data
+    coordinator.handle_now_playing(_playing("0", "873.601"))
+    await init_integration.listener.ad_playing_changed(_ad_playing(duration="10.021"))
+    await hass.async_block_till_done()
+    assert hass.states.get(AD_SENSOR_ID).state == STATE_ON
+
+    for position in ("2.043", "3.085", "9.998"):
+        coordinator.handle_now_playing(
+            NowPlayingEvent(
+                {
+                    "videoId": VIDEO_ID,
+                    "state": "1081",
+                    "currentTime": position,
+                    "duration": "10.021",
+                }
+            )
+        )
+    await hass.async_block_till_done()
+    assert hass.states.get(AD_SENSOR_ID).state == STATE_ON
+
+
+async def test_a_bumper_waits_for_the_ad_it_introduces(
+    hass: HomeAssistant,
+    init_integration: FakeLounge,
+    mock_config_entry: MockConfigEntry,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """A bumper's end waits for the next ad however long the TV takes.
+
+    A bumper is the sting that introduces a break, so an ad always follows
+    it. Replayed from a cold start, where the TV took 2.9 seconds to load
+    the ad behind the bumper and the sensor flickered for 1.6 of them.
+    """
+    coordinator = mock_config_entry.runtime_data
+    listener = init_integration.listener
+    coordinator.handle_now_playing(_playing("0", "6.041"))
+    states = _record_ad_sensor(hass)
+    await listener.ad_playing_changed(_ad_playing(bumper="true", duration="6.041"))
+    await listener.ad_state_changed(_ad_state("1"))
+    await hass.async_block_till_done()
+    assert hass.states.get(AD_SENSOR_ID).state == STATE_ON
+
+    # The bumper ends, and the ad behind it is still loading.
+    coordinator.handle_ad_state(State.Buffering, False)
+    await hass.async_block_till_done()
+    await _gap(hass, freezer, 2.878)
+    assert hass.states.get(AD_SENSOR_ID).state == STATE_ON
+
+    await listener.ad_playing_changed(_ad_playing(duration="15.041"))
+    await hass.async_block_till_done()
+    assert states == [STATE_ON]
+
+    # That ad ends the break, with the video back where it was interrupted.
+    coordinator.handle_ad_state(State.Buffering, False)
+    coordinator.handle_playback_state(State.Advertisement, 193.143, 562.0)
+    await hass.async_block_till_done()
+    assert states == [STATE_ON, STATE_OFF]
+
+
+async def test_a_bumper_with_nothing_behind_it_clears_itself(
+    hass: HomeAssistant,
+    init_integration: FakeLounge,
+    mock_config_entry: MockConfigEntry,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """Waiting on the ad a bumper introduces is still bounded.
+
+    Every bumper in two captured sessions was followed by another ad, but a
+    TV that ends a break on one must not leave the sensor on for good.
+    """
+    coordinator = mock_config_entry.runtime_data
+    coordinator.handle_now_playing(_playing("0", "6.041"))
+    await init_integration.listener.ad_playing_changed(
+        _ad_playing(bumper="true", duration="6.041")
+    )
+    coordinator.handle_ad_state(State.Buffering, False)
+    await hass.async_block_till_done()
+    assert hass.states.get(AD_SENSOR_ID).state == STATE_ON
+
+    await _wait(hass, freezer, 6.041 + AD_OVERRUN)
+    assert hass.states.get(AD_SENSOR_ID).state == STATE_OFF
+
+
 async def test_an_ad_the_tv_never_ends_clears_itself(
     hass: HomeAssistant,
     init_integration: FakeLounge,
