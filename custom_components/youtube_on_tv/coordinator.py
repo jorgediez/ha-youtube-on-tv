@@ -51,6 +51,10 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util import dt as dt_util
 
 from .const import (
+    AD_END_GRACE,
+    AD_MAX_AD_SECONDS,
+    AD_OVERRUN,
+    AD_RESUME_POSITION,
     APP_STATE_INTERVAL,
     CONF_APP_URL,
     CONF_OPEN_ACTIONS,
@@ -264,13 +268,16 @@ class _Listener(EventListener):
 
     async def ad_playing_changed(self, event: AdPlayingEvent) -> None:
         LOGGER.debug(
-            "adPlaying: state=%s skip_enabled=%s skippable=%s bumper=%s",
+            "adPlaying: state=%s skip_enabled=%s skippable=%s bumper=%s duration=%s",
             event.ad_state.name,
             event.is_skip_enabled,
             event.is_skippable,
             event.is_bumper,
+            event.duration,
         )
-        self._coordinator.handle_ad_state(event.ad_state, event.is_skip_enabled)
+        self._coordinator.handle_ad_playing(
+            event.duration, event.is_skip_enabled, event.is_bumper
+        )
 
     async def disconnected(self, event: DisconnectedEvent) -> None:
         self._coordinator.handle_disconnected()
@@ -319,6 +326,14 @@ class YouTubeOnTvCoordinator(DataUpdateCoordinator[TvState]):
         # Last YouTube app state reported by DIAL; None if the TV didn't answer.
         self.app_state: str | None = None
         self._unsub_settle: CALLBACK_TYPE | None = None
+        # An ad's end waiting to be published, and the bound on how long an
+        # ad can be on screen without the TV mentioning it again.
+        self._unsub_ad_end: CALLBACK_TYPE | None = None
+        self._unsub_ad_overrun: CALLBACK_TYPE | None = None
+        # What the TV said about the ad on screen: how long it runs, and
+        # whether it is a bumper, the sting that introduces an ad break.
+        self._ad_duration: float | None = None
+        self._ad_is_bumper = False
         self._task: asyncio.Task[None] | None = None
         self._titles: dict[str, tuple[str | None, str | None]] = {}
         # Titles being fetched, so a repeated queue report doesn't fetch again.
@@ -457,6 +472,7 @@ class YouTubeOnTvCoordinator(DataUpdateCoordinator[TvState]):
 
         await self._async_stop_listening(terminate=True)
         self._cancel_settle()
+        self._cancel_ad_timers()
         self._state = TvState()
         self.async_set_updated_data(self._state)
         self._set_available(False)
@@ -465,6 +481,7 @@ class YouTubeOnTvCoordinator(DataUpdateCoordinator[TvState]):
         """Disconnect from the screen."""
         await super().async_shutdown()
         self._cancel_settle()
+        self._cancel_ad_timers()
         if self._unsub_stale_reply is not None:
             self._unsub_stale_reply()
             self._unsub_stale_reply = None
@@ -990,17 +1007,21 @@ class YouTubeOnTvCoordinator(DataUpdateCoordinator[TvState]):
             # ad is on screen comes from the ad events: a TV sends one last
             # "Advertisement" state just after an ad is skipped, which would
             # otherwise turn the ad sensor back on for a second.
-            self._update(
-                replace(
-                    current,
-                    status=PlayerStatus.PLAYING,
-                    ad_playing=current.ad_playing or not self._seen_ad_event,
-                    position=None,
-                    duration=None,
-                    position_updated_at=None,
-                ),
-                immediate=True,
+            new = replace(
+                current,
+                status=PlayerStatus.PLAYING,
+                ad_playing=current.ad_playing or not self._seen_ad_event,
+                position=None,
+                duration=None,
+                position_updated_at=None,
             )
+            if self._past_the_ad(current_time, duration):
+                # Unless the position is past the end of the ad: that is the
+                # video coming back where the break interrupted it, so there
+                # is no point waiting to see whether another ad follows.
+                self._cancel_ad_timers()
+                new = replace(new, ad_playing=False, ad_skippable=False)
+            self._update(new, immediate=True)
             return
         if current.video_id is None:
             return
@@ -1015,35 +1036,186 @@ class YouTubeOnTvCoordinator(DataUpdateCoordinator[TvState]):
                 position=current_time,
                 position_updated_at=dt_util.utcnow(),
                 duration=duration or current.duration,
-                ad_playing=False,
-                ad_skippable=False,
             )
+            if not self._seen_ad_event or self._resumed_content(current_time):
+                # Without ad events, content playing again is the only sign
+                # that an ad finished. A TV that sends them announces each ad
+                # of a break as "playing" too, carrying the ad's own duration,
+                # so clearing on that alone would drop the sensor between ads.
+                self._cancel_ad_timers()
+                new = replace(new, ad_playing=False, ad_skippable=False)
             # A seek shows up as a short pause, so let pauses settle.
             self._update(new, immediate=state is State.Playing)
             return
         # Stopped, Starting, Buffering, Cued, AdSkipped: short-lived states seen
         # while loading, seeking and between ads and content.
         new = replace(current, status=PlayerStatus.BUFFERING)
-        if state is State.AdSkipped:
+        ad_over = state is State.AdSkipped or (
+            state is State.Starting and self._resumed_content(current_time)
+        )
+        if ad_over:
+            self._cancel_ad_timers()
             new = replace(new, ad_playing=False, ad_skippable=False)
-        self._update(new, immediate=False)
+        # These states are short-lived, so they settle before being published,
+        # except for the end of an ad: whatever follows the ad sensor should
+        # not be kept waiting.
+        self._update(new, immediate=ad_over)
+
+    @callback
+    def _past_the_ad(self, position: float | None, duration: float | None) -> bool:
+        """Whether a position is the video resuming after the ad on screen.
+
+        An ad is announced with its own length, and the states it sends carry
+        its own position, so a position past that length belongs to the video
+        the break interrupted. It also has to be short of the video's end: a
+        video skipped to its last second reports a position past any ad, and
+        a trailing announcement for the ad just skipped would then turn the
+        sensor back on. Whatever the TV does after the video ends, going idle
+        clears the ad within a tenth of a second.
+        """
+        return (
+            self._state.ad_playing
+            and position is not None
+            and duration is not None
+            and self._ad_duration is not None
+            and self._ad_duration < position < duration
+        )
+
+    @callback
+    def _resumed_content(self, position: float | None) -> bool:
+        """Whether a playback state means the video is back after an ad.
+
+        An ad is always played from its own beginning, and a TV reports the
+        next ad of a break at exactly zero, so any position at all is the
+        video: either resuming where the ad interrupted it, or a fraction of
+        a second into one that an ad played before. A video the TV reports
+        without a position yet looks the same as the next ad of the break,
+        and there the end is published by the wait instead.
+        """
+        return (
+            self._state.ad_playing
+            and position is not None
+            and position > AD_RESUME_POSITION
+        )
+
+    @callback
+    def handle_ad_playing(
+        self, duration: float | None, skip_enabled: bool, is_bumper: bool
+    ) -> None:
+        """Handle the TV announcing that an ad is on screen.
+
+        That is what the event means, whatever ad state it carries: a Samsung
+        QN900F sends "stopped" with it at the start of every ad, and a running
+        state only sometimes and late. Reading the state instead left ads
+        undetected, up to seventeen seconds late, or dropped halfway through a
+        break.
+        """
+        self._last_event_at = dt_util.utcnow()
+        self._seen_ad_event = True
+        self._ad_duration = duration
+        self._ad_is_bumper = is_bumper
+        self._cancel_ad_end()
+        self._arm_ad_overrun(duration)
+        new = replace(self._state, ad_playing=True, ad_skippable=skip_enabled)
+        self._update(new, immediate=True)
 
     @callback
     def handle_ad_state(self, ad_state: State, skip_enabled: bool) -> None:
         """Handle an ad state change."""
         self._last_event_at = dt_util.utcnow()
         self._seen_ad_event = True
-        if ad_state is State.AdSkipped:
-            new = replace(self._state, ad_playing=False, ad_skippable=False)
-        elif ad_state in _AD_RUNNING_STATES:
+        if ad_state in _AD_RUNNING_STATES:
             # Whether the skip button is up is reported separately from the ad
             # state, so it is trusted as sent.
+            self._cancel_ad_end()
+            if self._unsub_ad_overrun is None:
+                # No announcement came with this ad, so its length is unknown.
+                self._arm_ad_overrun(None)
             new = replace(self._state, ad_playing=True, ad_skippable=skip_enabled)
         else:
-            # Trailing events as an ad finishes arrive after playback has
-            # resumed, so they must not turn "ad playing" back on.
+            # The TV marks the end of every ad, including between the ads of
+            # one break, where the next is announced a fraction of a second
+            # later. Publishing the end at once would drop the sensor between
+            # them, and the trailing events of a finished ad arrive after
+            # playback has resumed, so the end waits for what follows it.
+            # Skipping an ad is such an end: on a Samsung QN900F the next ad
+            # of the break was announced 0.65 seconds after the skip, and
+            # clearing at once there left the following ad unmuted.
+            self._schedule_ad_end()
             new = replace(self._state, ad_skippable=skip_enabled)
         self._update(new, immediate=True)
+
+    @callback
+    def _schedule_ad_end(self) -> None:
+        """Publish the end of an ad unless another one follows it."""
+        if not self._state.ad_playing or self._unsub_ad_end is not None:
+            return
+        if self._ad_is_bumper:
+            # A bumper introduces an ad break and is never the last ad in
+            # one, so the ad behind it is worth waiting for however long the
+            # TV takes to load it. On a cold start that was 2.9 seconds. The
+            # bound on how long an ad can run still applies.
+            return
+        self._unsub_ad_end = async_call_later(
+            self.hass, AD_END_GRACE, self._ad_break_over
+        )
+
+    @callback
+    def _ad_break_over(self, _now: datetime) -> None:
+        """Clear the ad, no further one having followed the last end."""
+        self._unsub_ad_end = None
+        self._cancel_ad_timers()
+        if not self._state.ad_playing:
+            return
+        self._update(
+            replace(self._state, ad_playing=False, ad_skippable=False), immediate=True
+        )
+
+    @callback
+    def _arm_ad_overrun(self, duration: float | None) -> None:
+        """Bound how long an ad can run without the TV mentioning it again."""
+        self._cancel_ad_overrun()
+        seconds = (
+            duration + AD_OVERRUN
+            if duration is not None and duration > 0
+            else AD_MAX_AD_SECONDS
+        )
+        self._unsub_ad_overrun = async_call_later(self.hass, seconds, self._ad_overran)
+
+    @callback
+    def _ad_overran(self, _now: datetime) -> None:
+        """Clear an ad the TV never said anything more about."""
+        self._unsub_ad_overrun = None
+        self._cancel_ad_timers()
+        if not self._state.ad_playing:
+            return
+        LOGGER.debug(
+            "%s never reported the end of the ad; clearing it",
+            self.config_entry.title,
+        )
+        self._update(
+            replace(self._state, ad_playing=False, ad_skippable=False), immediate=True
+        )
+
+    @callback
+    def _cancel_ad_end(self) -> None:
+        if self._unsub_ad_end is not None:
+            self._unsub_ad_end()
+            self._unsub_ad_end = None
+
+    @callback
+    def _cancel_ad_overrun(self) -> None:
+        if self._unsub_ad_overrun is not None:
+            self._unsub_ad_overrun()
+            self._unsub_ad_overrun = None
+
+    @callback
+    def _cancel_ad_timers(self) -> None:
+        """Stop waiting on an ad and forget what the TV said about it."""
+        self._cancel_ad_end()
+        self._cancel_ad_overrun()
+        self._ad_duration = None
+        self._ad_is_bumper = False
 
     @callback
     def handle_autoplay(self, enabled: bool, supported: bool) -> None:
@@ -1149,6 +1321,7 @@ class YouTubeOnTvCoordinator(DataUpdateCoordinator[TvState]):
     def handle_disconnected(self) -> None:
         """Handle the TV ending the session (e.g. YouTube sent to background)."""
         LOGGER.debug("%s ended the lounge session", self.config_entry.title)
+        self._cancel_ad_timers()
         self._update(self._cleared(PlayerStatus.OFF), immediate=True)
 
     async def _async_check_stale(self, _now: datetime | None = None) -> None:

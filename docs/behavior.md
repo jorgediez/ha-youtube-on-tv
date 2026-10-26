@@ -23,6 +23,8 @@ Turn off the **Remote session** switch to watch Shorts, and on again afterwards.
 
 ## Ads
 
+The **Ad playing** sensor follows what the TV reports: it turns on as soon as the TV announces an ad, stays on across a whole ad break instead of flickering between the ads in it, and turns off when the video comes back. When the video resumes where an ad interrupted it, the sensor turns off at once. When it starts from the beginning instead, which is what the next ad of the same break looks like, the sensor takes a second or so to turn off: that is how long it waits to see whether another ad follows.
+
 The **Skip ad** button does what pressing skip on the remote does: it works once YouTube offers the skip, normally after five seconds, and only for ads that are skippable at all. Bumpers and other unskippable ads play in full, so the **Ad playing** sensor is the one to use for muting them.
 
 ## Playback details
