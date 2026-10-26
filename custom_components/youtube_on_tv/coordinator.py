@@ -1085,10 +1085,12 @@ class YouTubeOnTvCoordinator(DataUpdateCoordinator[TvState]):
     def _resumed_content(self, position: float | None) -> bool:
         """Whether a playback state means the video is back after an ad.
 
-        An ad is always announced from its own beginning, so a position inside
-        the video is the video resuming where the ad interrupted it. A pre-roll
-        ends with the video starting from zero, which looks the same as the
-        next ad of the break; there the end is published by the wait instead.
+        An ad is always played from its own beginning, and a TV reports the
+        next ad of a break at exactly zero, so any position at all is the
+        video: either resuming where the ad interrupted it, or a fraction of
+        a second into one that an ad played before. A video the TV reports
+        without a position yet looks the same as the next ad of the break,
+        and there the end is published by the wait instead.
         """
         return (
             self._state.ad_playing

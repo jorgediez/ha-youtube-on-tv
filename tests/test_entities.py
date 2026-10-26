@@ -540,15 +540,13 @@ async def test_ad_pod_from_a_real_tv(
     hass: HomeAssistant,
     init_integration: FakeLounge,
     mock_config_entry: MockConfigEntry,
-    freezer: FrozenDateTimeFactory,
 ) -> None:
     """Replay a captured ad break: one On, one Off, nothing in between.
 
     The TV sends a last "Advertisement" playback state 4 ms after the ad is
     skipped, carrying the video's duration, which used to turn the sensor
-    back on for a second. The video then starts from the beginning, which is
-    what another ad of the same break would look like, so the end of the
-    break is published once the wait for one runs out.
+    back on for a second. The video then plays from a tenth of a second in,
+    which is what ends the break.
     """
     coordinator = mock_config_entry.runtime_data
     listener = init_integration.listener
@@ -601,8 +599,6 @@ async def test_ad_pod_from_a_real_tv(
     coordinator.handle_playback_state(State.Playing, 0.091, 224.861)
     await hass.async_block_till_done()
     assert hass.states.get(SKIP_AD_ID).state == STATE_UNAVAILABLE
-
-    await _wait(hass, freezer)
     assert hass.states.get(AD_SENSOR_ID).state == STATE_OFF
     assert hass.states.get(SKIP_AD_ID).state == STATE_UNAVAILABLE
     assert states == [STATE_ON, STATE_OFF]
@@ -747,6 +743,41 @@ async def test_the_video_position_ends_the_ad(
     coordinator.handle_playback_state(State.Advertisement, 193.143, 562.0)
     await hass.async_block_till_done()
     assert hass.states.get(AD_SENSOR_ID).state == STATE_OFF
+
+
+async def test_the_video_back_at_the_very_start_ends_the_ad(
+    hass: HomeAssistant,
+    init_integration: FakeLounge,
+    mock_config_entry: MockConfigEntry,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """A pre-roll ends as soon as the video has a position at all.
+
+    The next ad of a break is reported at exactly zero, the video a few
+    hundredths of a second in. Waiting for a whole second of video before
+    believing the break was over made every pre-roll unmute late.
+    """
+    coordinator = mock_config_entry.runtime_data
+    listener = init_integration.listener
+    coordinator.handle_now_playing(_playing("0", "20.021"))
+    states = _record_ad_sensor(hass)
+    await listener.ad_playing_changed(_ad_playing(duration="20.021"))
+    await hass.async_block_till_done()
+    assert hass.states.get(AD_SENSOR_ID).state == STATE_ON
+
+    # The first ad ends and the second is reported playing from zero.
+    coordinator.handle_ad_state(State.Buffering, False)
+    coordinator.handle_playback_state(State.Playing, 0.0, 15.021)
+    await hass.async_block_till_done()
+    await listener.ad_playing_changed(_ad_playing(duration="15.021"))
+    await _gap(hass, freezer, 0.5)
+    assert states == [STATE_ON]
+
+    # That one ends too, and this time the video itself is back.
+    coordinator.handle_ad_state(State.Buffering, False)
+    coordinator.handle_playback_state(State.Playing, 0.062, 200.621)
+    await hass.async_block_till_done()
+    assert states == [STATE_ON, STATE_OFF]
 
 
 async def test_a_skip_at_the_end_of_the_video_does_not_blink(

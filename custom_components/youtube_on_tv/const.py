@@ -55,9 +55,12 @@ POSITION_OVERRUN: Final = 30
 # fifteen ads, was 0.95 seconds.
 AD_END_GRACE: Final = 1.25
 
-# A playback position this far into a video means the video itself is back
-# after an ad, rather than another ad of the same break starting from zero.
-AD_RESUME_POSITION: Final = 1.0
+# A playback position past this means the video itself is back after an ad,
+# rather than another ad of the same break. A TV reports the next ad of a
+# break at exactly zero: over four captured sessions, all eighteen of those
+# were zero and all thirteen videos coming back were not, the smallest by
+# two hundredths of a second.
+AD_RESUME_POSITION: Final = 0.0
 
 # An ad is assumed over this many seconds past the duration the TV reported
 # for it, and after AD_MAX_AD_SECONDS when no duration came with it. A TV that
