@@ -1,6 +1,6 @@
 # YouTube on TV
 
-[![HACS Default](https://img.shields.io/badge/HACS-Default-41BDF5.svg)](https://hacs.xyz)
+[![Marketplace](https://img.shields.io/badge/Marketplace-Default-41BDF5.svg?logo=homeassistant&logoColor=white)](https://www.home-assistant.io/integrations/marketplace/)
 [![Release](https://img.shields.io/github/v/release/jorgediez/ha-youtube-on-tv)](https://github.com/jorgediez/ha-youtube-on-tv/releases)
 [![Validate](https://github.com/jorgediez/ha-youtube-on-tv/actions/workflows/validate.yml/badge.svg)](https://github.com/jorgediez/ha-youtube-on-tv/actions/workflows/validate.yml)
 [![Tests](https://github.com/jorgediez/ha-youtube-on-tv/actions/workflows/tests.yml/badge.svg)](https://github.com/jorgediez/ha-youtube-on-tv/actions/workflows/tests.yml)
@@ -50,10 +50,12 @@ YouTube Kids is not supported: while a kids profile is on screen the entities ar
 
 ## Installation
 
-[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=jorgediez&repository=ha-youtube-on-tv&category=integration)
+[![Open your Home Assistant instance and open a repository inside the Marketplace.](https://my.home-assistant.io/badges/marketplace_repository.svg)](https://my.home-assistant.io/redirect/marketplace_repository/?owner=jorgediez&repository=ha-youtube-on-tv&category=integration)
 
-1. In HACS, search for **YouTube on TV** and open it, or use the button above.
-2. Select **Download**, then restart Home Assistant.
+1. In Home Assistant, go to *Settings → Marketplace*, search for **YouTube on TV** and open it, or use the button above.
+2. Select **Install**. The setup opens once it's installed; if a restart is needed, Home Assistant offers one.
+
+On Home Assistant releases before 2026.11, use HACS instead: search for **YouTube on TV**, select **Download**, then restart Home Assistant. The button above opens it there too.
 
 Or copy `custom_components/youtube_on_tv` into your Home Assistant `config/custom_components/` folder and restart. Requires Home Assistant 2026.3 or newer.
 
