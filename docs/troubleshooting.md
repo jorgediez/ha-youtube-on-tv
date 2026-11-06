@@ -54,7 +54,7 @@ Replace the token on **every** such line before sharing the log. One session usu
 ## Removing the integration
 
 1. In *Settings → Devices & services → YouTube on TV*, select **⋮ → Delete** on each TV.
-2. If you installed through HACS, remove **YouTube on TV** there; otherwise delete `config/custom_components/youtube_on_tv/`.
+2. If you installed it from the Marketplace, open **YouTube on TV** there and select **⋮ → Uninstall**. With HACS, remove it there. Otherwise delete `config/custom_components/youtube_on_tv/`.
 3. Restart Home Assistant.
 
 The TV's YouTube app may still list Home Assistant as a linked device. Where the app's settings offer to unlink devices, that removes it.
