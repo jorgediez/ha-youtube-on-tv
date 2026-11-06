@@ -7,11 +7,6 @@ from unittest.mock import AsyncMock, patch
 
 from freezegun.api import FrozenDateTimeFactory
 import pytest
-from pytest_homeassistant_custom_component.common import (
-    MockConfigEntry,
-    async_fire_time_changed,
-    async_fire_time_changed_exact,
-)
 from pyytlounge import AdPlayingEvent, AdStateEvent, NowPlayingEvent, State
 
 from custom_components.youtube_on_tv.const import (
@@ -44,6 +39,11 @@ from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import entity_registry as er
 
 from .conftest import APP_URL, SCREEN_ID, FakeLounge, wait_for
+from .harness import (
+    MockConfigEntry,
+    async_fire_time_changed,
+    async_fire_time_changed_exact,
+)
 
 
 def _ad_playing(

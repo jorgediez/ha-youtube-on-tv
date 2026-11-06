@@ -7,10 +7,6 @@ from unittest.mock import AsyncMock
 
 from freezegun.api import FrozenDateTimeFactory
 import pytest
-from pytest_homeassistant_custom_component.common import (
-    MockConfigEntry,
-    async_fire_time_changed,
-)
 from pyytlounge import (
     AdPlayingEvent,
     AdStateEvent,
@@ -55,6 +51,10 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 
 from .conftest import FakeLounge, wait_for
+from .harness import (
+    MockConfigEntry,
+    async_fire_time_changed,
+)
 
 ENTITY_ID = "media_player.youtube_on_samsung_neo_qled"
 AD_SENSOR_ID = "binary_sensor.youtube_on_samsung_neo_qled_ad_playing"

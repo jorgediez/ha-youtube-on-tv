@@ -8,7 +8,6 @@ from unittest.mock import AsyncMock, patch
 
 import aiohttp
 import pytest
-from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.youtube_on_tv.config_flow import (
     InvalidPairingCode,
@@ -39,6 +38,7 @@ from .conftest import (
     TITLE,
     UDN,
 )
+from .harness import MockConfigEntry
 
 FLOW = "custom_components.youtube_on_tv.config_flow"
 LOCATION = f"http://{HOST}:7678/nservice/"

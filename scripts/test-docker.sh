@@ -49,8 +49,9 @@ for name in "${targets[@]}"; do
     exit 1
   fi
   if [[ -n $harness ]]; then
-    # The entry's harness, plus everything else in requirements_test.txt.
-    requirements="$harness"$'\n'"$(grep -v '^pytest-homeassistant-custom-component' "$REQUIREMENTS")"
+    # The entry's harness, plus everything else in requirements_test.txt except
+    # pytest-homeassistant and pytest-cov, as in CI.
+    requirements="$harness"$'\n'"$(grep -vE '^(pytest-homeassistant|pytest-cov)==' "$REQUIREMENTS")"
   else
     requirements="$(cat "$REQUIREMENTS")"
   fi

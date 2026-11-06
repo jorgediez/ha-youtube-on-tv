@@ -7,10 +7,6 @@ from collections.abc import Generator
 from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
 
 import pytest
-from pytest_homeassistant_custom_component.common import MockConfigEntry
-from pytest_homeassistant_custom_component.test_util.aiohttp import (
-    AiohttpClientMocker,
-)
 
 from custom_components.youtube_on_tv.const import (
     CONF_APP_URL,
@@ -22,6 +18,11 @@ from custom_components.youtube_on_tv.const import (
 from custom_components.youtube_on_tv.dial import DialScreen
 from homeassistant.const import CONF_HOST
 from homeassistant.core import HomeAssistant
+
+from .harness import (
+    AiohttpClientMocker,
+    MockConfigEntry,
+)
 
 HOST = "192.0.2.10"
 SCREEN_ID = "0123456789abcdef" * 4
