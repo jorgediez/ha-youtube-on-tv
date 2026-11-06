@@ -7,8 +7,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from freezegun.api import FrozenDateTimeFactory
 import pytest
-from pytest_homeassistant_custom_component.common import MockConfigEntry
-from pytest_homeassistant_custom_component.test_util.aiohttp import AiohttpClientMocker
 from pyytlounge import EventListener, NowPlayingEvent, State
 
 from custom_components.youtube_on_tv.coordinator import (
@@ -31,6 +29,7 @@ from homeassistant.exceptions import ServiceValidationError
 from homeassistant.setup import async_setup_component
 
 from .conftest import FakeLounge, wait_for
+from .harness import AiohttpClientMocker, MockConfigEntry
 
 COORDINATOR = "custom_components.youtube_on_tv.coordinator"
 PREFIX = "youtube_on_samsung_neo_qled"

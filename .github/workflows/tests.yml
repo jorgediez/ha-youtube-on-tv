@@ -31,7 +31,8 @@ jobs:
       matrix:
         include:
           # Oldest supported release, as in hacs.json. Dependabot only bumps
-          # requirements_test.txt, so this pin stays put.
+          # requirements_test.txt, so this pin stays put. pytest-homeassistant
+          # starts at 2026.11, so this is the community harness it replaced.
           - name: min  # 2026.3
             python: "3.14"
             harness: "pytest-homeassistant-custom-component==0.13.320"
@@ -49,7 +50,9 @@ jobs:
       - name: Install test requirements
         run: |
           if [ -n "${{ matrix.harness }}" ]; then
-            grep -v '^pytest-homeassistant-custom-component' requirements_test.txt > "$RUNNER_TEMP/requirements.txt"
+            # The entry's harness replaces pytest-homeassistant, and pins its
+            # own pytest-cov.
+            grep -vE '^(pytest-homeassistant|pytest-cov)==' requirements_test.txt > "$RUNNER_TEMP/requirements.txt"
             pip install "${{ matrix.harness }}" -r "$RUNNER_TEMP/requirements.txt"
           else
             pip install -r requirements_test.txt

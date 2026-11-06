@@ -6,7 +6,6 @@ import asyncio
 from unittest.mock import AsyncMock, patch
 
 import pytest
-from pytest_homeassistant_custom_component.common import MockConfigEntry
 from pyytlounge import NowPlayingEvent, State
 
 from custom_components.youtube_on_tv.const import (
@@ -27,6 +26,7 @@ from homeassistant.data_entry_flow import FlowResultType
 from homeassistant.exceptions import HomeAssistantError
 
 from .conftest import SCREEN_ID, FakeLounge
+from .harness import MockConfigEntry
 
 A, B = "aqz-KE-bpKQ", "eRsGyueVLvQ"
 CODE_PLAYER = "media_player.youtube_on_kitchen_tv"

@@ -7,10 +7,6 @@ from unittest.mock import AsyncMock, MagicMock
 
 from freezegun.api import FrozenDateTimeFactory
 import pytest
-from pytest_homeassistant_custom_component.common import (
-    MockConfigEntry,
-    async_fire_time_changed,
-)
 from pyytlounge import (
     AutoplayModeChangedEvent,
     AutoplayUpNextEvent,
@@ -45,6 +41,10 @@ from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import entity_registry as er
 
 from .conftest import ENTRY_DATA, FakeLounge
+from .harness import (
+    MockConfigEntry,
+    async_fire_time_changed,
+)
 
 PREFIX = "youtube_on_samsung_neo_qled"
 AUTOPLAY_ID = f"switch.{PREFIX}_autoplay"

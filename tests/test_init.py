@@ -12,8 +12,6 @@ from unittest.mock import AsyncMock, patch
 
 import aiohttp
 import pytest
-from pytest_homeassistant_custom_component.common import MockConfigEntry
-from pytest_homeassistant_custom_component.typing import ClientSessionGenerator
 from pyytlounge import NowPlayingEvent, State
 from pyytlounge.exceptions import NotSupportedException
 
@@ -35,6 +33,11 @@ from .conftest import (
     SCREEN_ID,
     FakeLounge,
     wait_for,
+)
+from .harness import (
+    ClientSessionGenerator,
+    MockConfigEntry,
+    get_diagnostics_for_config_entry,
 )
 
 VIDEO_ID = "Yeke1krzPFM"
@@ -175,10 +178,6 @@ async def test_diagnostics(
     mock_config_entry: MockConfigEntry,
 ) -> None:
     """Diagnostics don't leak the screen id or the TV's address."""
-    from pytest_homeassistant_custom_component.components.diagnostics import (
-        get_diagnostics_for_config_entry,
-    )
-
     diagnostics = await get_diagnostics_for_config_entry(
         hass, hass_client, mock_config_entry
     )
@@ -210,10 +209,6 @@ async def test_diagnostics_leave_out_what_is_watched(
     mock_config_entry: MockConfigEntry,
 ) -> None:
     """A report says something is playing and the queue's size, not what."""
-    from pytest_homeassistant_custom_component.components.diagnostics import (
-        get_diagnostics_for_config_entry,
-    )
-
     coordinator = mock_config_entry.runtime_data
     coordinator.handle_now_playing(
         NowPlayingEvent(

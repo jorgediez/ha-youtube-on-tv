@@ -10,6 +10,9 @@ testpaths = ["tests"]
 pythonpath = ["."]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
+# pytest-homeassistant needs Home Assistant to alias httpx before respx's plugin
+# imports it. Its fixtures still use respx; only the plugin is off.
+addopts = "-p no:respx"
 
 [tool.coverage.run]
 source = ["custom_components/youtube_on_tv"]

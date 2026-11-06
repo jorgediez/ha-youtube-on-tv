@@ -6,9 +6,6 @@ import re
 from unittest.mock import patch
 
 import pytest
-from pytest_homeassistant_custom_component.test_util.aiohttp import (
-    AiohttpClientMocker,
-)
 
 from custom_components.youtube_on_tv.dial import (
     DialConnectionError,
@@ -25,6 +22,9 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.service_info.ssdp import SsdpServiceInfo
 
 from .conftest import APP_URL, HOST, SCREEN_ID, UDN
+from .harness import (
+    AiohttpClientMocker,
+)
 
 LOCATION = f"http://{HOST}:7678/nservice/"
 
