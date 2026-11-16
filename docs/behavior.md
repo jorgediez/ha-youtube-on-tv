@@ -55,6 +55,6 @@ The **Skip ad** button does what pressing skip on the remote does: it works once
 
 ## What the protocol doesn't offer
 
-- **Volume:** YouTube reports its own internal volume, not the TV's. Use your TV's integration, such as [Samsung Smart TV](https://www.home-assistant.io/integrations/samsungtv/).
+- **Volume:** the protocol can set and report the YouTube app's own volume, but that isn't the volume your TV remote controls, and on some TVs a mute sent this way can get stuck. The integration leaves it alone. Use your TV's integration, such as [Samsung Smart TV](https://www.home-assistant.io/integrations/samsungtv/); a [universal media player](https://www.home-assistant.io/integrations/universal/) can combine its volume with this integration's playback controls.
 - **"Stats for nerds" and subtitle appearance:** no commands exist, so those stay on the TV's own remote.
 - **Browsing or searching:** the protocol plays a video you already know the id of; it can't search YouTube.
