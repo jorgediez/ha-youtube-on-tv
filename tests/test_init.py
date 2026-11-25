@@ -8,17 +8,22 @@ from datetime import timedelta
 import json
 import logging
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import aiohttp
+from freezegun.api import FrozenDateTimeFactory
 import pytest
-from pyytlounge import NowPlayingEvent, State
+from pyytlounge import EventListener, NowPlayingEvent, State
 from pyytlounge.exceptions import NotSupportedException
 
 from custom_components.youtube_on_tv.const import (
     CONF_MODEL,
     CONF_SCREEN_ID,
     DOMAIN,
+)
+from custom_components.youtube_on_tv.coordinator import (
+    LOUNGE_SILENCE_SECONDS,
+    _LoungeApi,
 )
 from homeassistant.config_entries import SOURCE_REAUTH, ConfigEntryState
 from homeassistant.core import HomeAssistant
@@ -37,6 +42,7 @@ from .conftest import (
 from .harness import (
     ClientSessionGenerator,
     MockConfigEntry,
+    async_fire_time_changed,
     get_diagnostics_for_config_entry,
 )
 
@@ -414,6 +420,100 @@ async def test_unexpected_error_retries(
         await init_integration.subscribed.wait()
     await wait_for(lambda: not _player_unavailable(hass))
     assert "something new from the library" in caplog.text
+
+
+async def _reopen_stream(api: FakeLounge) -> None:
+    """End the event stream cleanly; the session reopens it on its own."""
+    calls = api.subscribe.await_count
+    api._stop.set()
+    await wait_for(lambda: api.subscribe.await_count > calls)
+
+
+@pytest.mark.parametrize("lounge_silence", [LOUNGE_SILENCE_SECONDS])
+async def test_silent_stream_is_reopened(
+    hass: HomeAssistant,
+    init_integration: FakeLounge,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """An event stream that goes silent is reopened, on the same session.
+
+    YouTube sends something at least every 30 seconds. A stream that stays
+    silent died without closing, and pyytlounge waits on it with no timeout:
+    the player stayed on the video it last showed, hours after the TV had
+    moved on, with nothing marking it stale.
+    """
+    api = init_integration
+    api.get_now_playing.reset_mock()
+
+    freezer.tick(timedelta(seconds=LOUNGE_SILENCE_SECONDS + 1))
+    async_fire_time_changed(hass)
+    # The frozen clock stops timers, wait_for's sleeps included: yield instead.
+    for _ in range(100):
+        if api.subscribe.await_count == 2:
+            break
+        await asyncio.sleep(0)
+    assert api.subscribe.await_count == 2
+
+    # Reopened without a new connection, which the TV would announce on
+    # screen, and asked what's playing to catch up on what was missed.
+    api.connect.assert_awaited_once()
+    api.get_now_playing.assert_awaited_once()
+    assert not _player_unavailable(hass)
+
+
+@pytest.mark.parametrize("lounge_silence", [0.3])
+async def test_events_keep_stream_open(
+    hass: HomeAssistant, init_integration: FakeLounge
+) -> None:
+    """Each event pushes the silence bound back, so a live stream stays open."""
+    api = init_integration
+    coordinator = hass.config_entries.async_entries(DOMAIN)[0].runtime_data
+    await _reopen_stream(api)
+    calls = api.subscribe.await_count
+    # Events every 0.1 seconds for a second: three times the bound.
+    for _ in range(10):
+        coordinator.note_lounge_activity()
+        await asyncio.sleep(0.1)
+    assert api.subscribe.await_count == calls
+
+    # Silence: reopened once the bound passes.
+    await wait_for(lambda: api.subscribe.await_count > calls)
+    api.connect.assert_awaited_once()
+
+
+async def test_stream_timeout_from_library_is_a_connection_error(
+    hass: HomeAssistant,
+    init_integration: FakeLounge,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A TimeoutError the silence bound didn't cause is handled as before."""
+    caplog.set_level(logging.DEBUG, logger="custom_components.youtube_on_tv")
+    api = init_integration
+    failures = 0
+
+    async def timeout_once() -> None:
+        nonlocal failures
+        failures += 1
+        if failures == 1:
+            raise TimeoutError("read timed out")
+        await api._subscribe()
+
+    api.subscribe.side_effect = timeout_once
+    await _reopen_stream(api)
+    await wait_for(lambda: failures == 2)
+    await wait_for(lambda: not _player_unavailable(hass))
+    assert "Lounge connection error: read timed out" in caplog.text
+    assert "reopening the event stream" not in caplog.text
+
+
+async def test_any_lounge_event_counts_as_activity() -> None:
+    """Every event the stream carries, keep-alives included, counts."""
+    coordinator = MagicMock()
+    api = _LoungeApi(
+        coordinator, "Home Assistant", EventListener(), logging.getLogger(__name__)
+    )
+    await api._process_event("noop", [])
+    coordinator.note_lounge_activity.assert_called_once()
 
 
 def _player_unavailable(hass: HomeAssistant) -> bool:

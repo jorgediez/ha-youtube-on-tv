@@ -101,6 +101,13 @@ MAX_AUTH_FAILURES = 3
 # A subscribe call shorter than this is followed by a pause, to avoid a
 # tight loop if the server keeps ending requests immediately.
 MIN_SUBSCRIBE_SECONDS = 1.0
+# YouTube sends something on the event stream at least every 30 seconds, a
+# "noop" when nothing else happens. A stream silent for longer than this died
+# without closing, for example when a router dropped the connection, and
+# pyytlounge would wait on it forever: the entities would stay on the last
+# state with nothing updating them. It is then reopened. iSponsorBlockTV
+# reopens after 60 seconds for the same reason; this leaves a wider margin.
+LOUNGE_SILENCE_SECONDS = 90.0
 # Ad states that mean an ad is on screen. Other labels arrive as an ad ends.
 _AD_RUNNING_STATES = (State.Playing, State.Advertisement, State.Starting)
 # While waiting for the app to come online after the open actions, the TV is
@@ -194,6 +201,8 @@ class _LoungeApi(YtLoungeApi):
         self._coordinator = coordinator
 
     async def _process_event(self, event_type: str, args: list[Any]) -> None:
+        # Any event, "noop" included, shows the stream is alive.
+        self._coordinator.note_lounge_activity()
         if event_type == "onVideoQualityChanged" and args:
             self._coordinator.handle_video_quality(args[0])
         await super()._process_event(event_type, args)
@@ -349,6 +358,8 @@ class YouTubeOnTvCoordinator(DataUpdateCoordinator[TvState]):
         self._pending_queue: tuple[tuple[str, ...], float] | None = None
         # Set to cut a reconnect wait short, after the app was opened.
         self._reconnect_now = asyncio.Event()
+        # Bound on how long the open event stream may stay silent.
+        self._silence: asyncio.Timeout | None = None
         self._unsupported_warned = False
 
     @property
@@ -584,10 +595,46 @@ class YouTubeOnTvCoordinator(DataUpdateCoordinator[TvState]):
         # where the client is still connected and no connect is needed.
         self._set_available(True)
         started = time.monotonic()
-        await self.api.subscribe()
+        silence: asyncio.Timeout | None = None
+        try:
+            async with asyncio.timeout(LOUNGE_SILENCE_SECONDS) as silence:
+                self._silence = silence
+                await self.api.subscribe()
+        except TimeoutError:
+            if silence is None or not silence.expired():
+                raise  # not ours: a connection error, handled as before
+            await self._async_reopen_silent_stream()
+            return
+        finally:
+            self._silence = None
         if time.monotonic() - started < MIN_SUBSCRIBE_SECONDS:
             # Guard against a tight loop if the server ends requests at once.
             await asyncio.sleep(MIN_SUBSCRIBE_SECONDS)
+
+    @callback
+    def note_lounge_activity(self) -> None:
+        """Push back the silence bound: the event stream is alive."""
+        silence = self._silence
+        if silence is not None and not silence.expired():
+            silence.reschedule(self.hass.loop.time() + LOUNGE_SILENCE_SECONDS)
+
+    async def _async_reopen_silent_stream(self) -> None:
+        """Prepare to reopen an event stream that went silent.
+
+        The session itself is kept, so the next subscribe reopens the stream
+        on it: no new connection, which a TV would announce on screen as a
+        device connecting. Asking what's playing resyncs whatever changed
+        while the stream was dead; if YouTube dropped the session in the
+        meantime, the request is refused, pyytlounge forgets the session and
+        the next round connects anew, as after any lost session.
+        """
+        LOGGER.debug(
+            "No events from %s for %s seconds; reopening the event stream",
+            self.config_entry.title,
+            LOUNGE_SILENCE_SECONDS,
+        )
+        with contextlib.suppress(*_CONNECTION_ERRORS, NotConnectedException):
+            await self.api.get_now_playing()
 
     @callback
     def _set_available(self, available: bool) -> None:
