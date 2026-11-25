@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import timedelta
 from unittest.mock import AsyncMock, MagicMock
 
@@ -486,6 +487,39 @@ async def test_remote_session_switch(
     assert hass.states.get(SESSION_SWITCH_ID).state == STATE_ON
     assert hass.states.get(PLAYER_ID).state != STATE_UNAVAILABLE
     assert mock_config_entry.options["session_enabled"] is True
+
+
+async def test_remote_session_switch_on_twice(
+    hass: HomeAssistant,
+    init_integration: FakeLounge,
+) -> None:
+    """Turning the session on while it's on doesn't start a second one.
+
+    The second session would keep reconnecting after the switch is turned
+    off, so the TV would still see Home Assistant as a connected remote.
+    """
+    await hass.services.async_call(
+        SWITCH_DOMAIN,
+        SERVICE_TURN_ON,
+        {ATTR_ENTITY_ID: SESSION_SWITCH_ID},
+        blocking=True,
+    )
+    await hass.async_block_till_done()
+    assert init_integration.subscribe.await_count == 1
+
+    await hass.services.async_call(
+        SWITCH_DOMAIN,
+        SERVICE_TURN_OFF,
+        {ATTR_ENTITY_ID: SESSION_SWITCH_ID},
+        blocking=True,
+    )
+    # Give a stray session the time to reconnect, as it would at once.
+    for _ in range(20):
+        await asyncio.sleep(0.01)
+
+    assert init_integration.connect.await_count == 1
+    assert not init_integration.connected()
+    assert hass.states.get(PLAYER_ID).state == STATE_UNAVAILABLE
 
 
 async def test_session_disabled_at_startup(
