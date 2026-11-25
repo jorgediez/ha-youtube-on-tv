@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Generator
+import math
 from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
 
 import pytest
@@ -61,6 +62,28 @@ def fast_reconnect() -> Generator[None]:
     with (
         patch(f"{module}.RECONNECT_MIN_DELAY", 0.01),
         patch(f"{module}.MIN_SUBSCRIBE_SECONDS", 0.01),
+    ):
+        yield
+
+
+@pytest.fixture
+def lounge_silence() -> float:
+    """Seconds the event stream may stay silent before it is reopened.
+
+    Off unless a test sets it with parametrize: the fake stream never sends
+    keep-alives, and under freezer a timer armed before the clock froze
+    looks overdue, so the watchdog would fire at the first time change and
+    add its own "what's playing" request to every test that counts them.
+    """
+    return math.inf
+
+
+@pytest.fixture(autouse=True)
+def silence_watchdog(lounge_silence: float) -> Generator[None]:
+    """Apply lounge_silence to the coordinator."""
+    with patch(
+        "custom_components.youtube_on_tv.coordinator.LOUNGE_SILENCE_SECONDS",
+        lounge_silence,
     ):
         yield
 
