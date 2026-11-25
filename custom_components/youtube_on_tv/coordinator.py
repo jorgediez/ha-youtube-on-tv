@@ -422,6 +422,15 @@ class YouTubeOnTvCoordinator(DataUpdateCoordinator[TvState]):
                     translation_key="cannot_connect",
                     translation_placeholders={"error": str(err)},
                 ) from err
+            except ConfigEntryAuthFailed as err:
+                # One bad reply doesn't prove the screen id was revoked. The
+                # session loop links again and asks to re-pair only after
+                # MAX_AUTH_FAILURES in a row, as it does while running.
+                LOGGER.debug(
+                    "Could not link %s at startup (%r); retrying in the background",
+                    entry.title,
+                    err.__cause__ or err,
+                )
             self._start_listening()
         else:
             self._set_available(False)
@@ -581,13 +590,23 @@ class YouTubeOnTvCoordinator(DataUpdateCoordinator[TvState]):
                 await self._reconnect_now.wait()
 
     async def _async_connect_and_subscribe(self) -> None:
+        relinked = False
         if not self.api.linked():
             await self._async_link()
+            relinked = True
         if not self.api.connected():
             if not await self.api.connect():
                 if self.api.linked():
                     raise NotConnectedException("Lounge refused the connection")
-                return  # token expired; relink on next iteration
+                # pyytlounge drops the token when YouTube refuses it. A stale
+                # token is relinked at once on the next round; refused again
+                # with a fresh one, the next try waits like any lost connection
+                # instead of looping as fast as YouTube answers.
+                if relinked:
+                    raise NotConnectedException(
+                        "Lounge refused the connection right after linking"
+                    )
+                return
             LOGGER.debug("Connected to %s", self.config_entry.title)
             await self.api.get_now_playing()
 

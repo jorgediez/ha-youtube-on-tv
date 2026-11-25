@@ -110,7 +110,11 @@ async def test_setup_revoked_screen_id(
     mock_lounge: list[FakeLounge],
     mock_app_state: AsyncMock,
 ) -> None:
-    """A screen id YouTube no longer accepts starts a reauth flow."""
+    """A screen id YouTube no longer accepts starts a reauth flow.
+
+    Not on the first refusal at startup: like a running session, it asks to
+    re-pair only after several in a row.
+    """
     mock_config_entry.add_to_hass(hass)
     original = FakeLounge.__init__
 
@@ -125,10 +129,131 @@ async def test_setup_revoked_screen_id(
     finally:
         FakeLounge.__init__ = original
 
-    assert mock_config_entry.state is ConfigEntryState.SETUP_ERROR
+    assert mock_config_entry.state is ConfigEntryState.LOADED
+    await wait_for(
+        lambda: len(hass.config_entries.flow.async_progress_by_handler(DOMAIN)) == 1
+    )
     flows = hass.config_entries.flow.async_progress_by_handler(DOMAIN)
-    assert len(flows) == 1
     assert flows[0]["context"]["source"] == SOURCE_REAUTH
+    assert mock_lounge[0].pair_with_screen_id.await_count == 4
+    assert _player_unavailable(hass)
+
+
+async def test_setup_bad_reply_is_retried(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_lounge: list[FakeLounge],
+    mock_app_state: AsyncMock,
+) -> None:
+    """One bad reply from YouTube at startup doesn't ask to re-pair."""
+    mock_config_entry.add_to_hass(hass)
+    original = FakeLounge.__init__
+
+    def flaky_init(self, *args, **kwargs) -> None:
+        original(self, *args, **kwargs)
+        link = self._link
+        replies = iter([ValueError("bad json")])
+
+        async def flaky_link(*link_args) -> bool:
+            if (reply := next(replies, None)) is not None:
+                raise reply
+            return await link(*link_args)
+
+        self.pair_with_screen_id.side_effect = flaky_link
+
+    FakeLounge.__init__ = flaky_init
+    try:
+        await hass.config_entries.async_setup(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+    finally:
+        FakeLounge.__init__ = original
+
+    lounge = mock_lounge[0]
+    await wait_for(lounge.subscribed.is_set)
+
+    assert mock_config_entry.state is ConfigEntryState.LOADED
+    assert not hass.config_entries.flow.async_progress_by_handler(DOMAIN)
+    assert lounge.pair_with_screen_id.await_count == 2
+    assert not _player_unavailable(hass)
+
+
+def _refuse_token(lounge: FakeLounge):
+    """Make connect act like pyytlounge on a 401: drop the token, fail.
+
+    It yields like a real request, so a session looping on refusals spins
+    without blocking the test, which then fails on its timeout.
+    """
+
+    async def refuse() -> bool:
+        await asyncio.sleep(0)
+        lounge._linked = False
+        return False
+
+    return refuse
+
+
+async def test_refused_token_is_relinked_at_once(
+    hass: HomeAssistant,
+    init_integration: FakeLounge,
+    mock_config_entry: MockConfigEntry,
+) -> None:
+    """A stale token YouTube refuses is replaced without waiting."""
+    lounge = init_integration
+    refuse = _refuse_token(lounge)
+    calls = 0
+
+    async def refuse_once() -> bool:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return await refuse()
+        return await lounge._connect()
+
+    lounge.connect.side_effect = refuse_once
+    lounge.subscribed.clear()
+    coordinator = mock_config_entry.runtime_data
+    with patch.object(
+        coordinator, "_async_reconnect_wait", AsyncMock()
+    ) as reconnect_wait:
+        lounge.drop_connection()
+        await wait_for(lounge.subscribed.is_set)
+
+    reconnect_wait.assert_not_awaited()
+    assert lounge.pair_with_screen_id.await_count == 2
+    assert lounge.connect.await_count == 3
+
+
+async def test_refused_after_relink_backs_off(
+    hass: HomeAssistant,
+    init_integration: FakeLounge,
+    mock_config_entry: MockConfigEntry,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A connection refused even with a fresh token waits before retrying.
+
+    Without the wait, the session would relink and reconnect as fast as
+    YouTube answers, for as long as it keeps refusing.
+    """
+    caplog.set_level(logging.DEBUG, logger="custom_components.youtube_on_tv")
+    lounge = init_integration
+    lounge.connect.side_effect = _refuse_token(lounge)
+    coordinator = mock_config_entry.runtime_data
+    waiting = asyncio.Event()
+
+    async def hold(delay: float) -> None:
+        waiting.set()
+        await asyncio.Event().wait()  # stay in the wait until the test ends
+
+    with patch.object(coordinator, "_async_reconnect_wait", side_effect=hold):
+        lounge.drop_connection()
+        async with asyncio.timeout(5):
+            await waiting.wait()
+
+    # The stale token, then the fresh one: two tries, not a loop.
+    assert lounge.connect.await_count == 3
+    assert lounge.pair_with_screen_id.await_count == 2
+    assert "refused the connection right after linking" in caplog.text
+    assert _player_unavailable(hass)
 
 
 async def test_revoked_while_running(
