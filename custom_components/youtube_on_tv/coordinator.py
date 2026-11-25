@@ -450,7 +450,15 @@ class YouTubeOnTvCoordinator(DataUpdateCoordinator[TvState]):
 
     @callback
     def _start_listening(self) -> None:
-        """Run the session in the background until it is stopped."""
+        """Run the session in the background until it is stopped.
+
+        Turning the session switch on while it's already on comes here too,
+        as Home Assistant calls turn_on whatever the state. A second loop
+        would subscribe on the same session and, with its task forgotten,
+        keep reconnecting after the switch is turned off.
+        """
+        if self._task is not None and not self._task.done():
+            return
         entry = self.config_entry
         self._task = entry.async_create_background_task(
             self.hass, self._async_run(), f"{DOMAIN} lounge {entry.entry_id}"
