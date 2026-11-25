@@ -200,6 +200,21 @@ class _LoungeApi(YtLoungeApi):
         super().__init__(*args)
         self._coordinator = coordinator
 
+    async def connect(self) -> bool:
+        """Connect, dropping a half-set session if the reply can't be handled.
+
+        pyytlounge sets the session ids as it reads the reply and the event
+        id only after the whole reply. If an event in between raises (a TV
+        on a YouTube Kids profile raises NotSupportedException), connected()
+        stays True with no event id, and every later request fails before
+        it is sent. Clearing the session makes the next retry start afresh.
+        """
+        try:
+            return await super().connect()
+        except BaseException:
+            self._connection_lost()
+            raise
+
     async def _process_event(self, event_type: str, args: list[Any]) -> None:
         # Any event, "noop" included, shows the stream is alive.
         self._coordinator.note_lounge_activity()

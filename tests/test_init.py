@@ -8,6 +8,7 @@ from datetime import timedelta
 import json
 import logging
 from pathlib import Path
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import aiohttp
@@ -639,6 +640,56 @@ async def test_any_lounge_event_counts_as_activity() -> None:
     )
     await api._process_event("noop", [])
     coordinator.note_lounge_activity.assert_called_once()
+
+
+def _bind_reply(*events: list[Any]) -> str:
+    """Build a /bc/bind reply in the lounge's length-prefixed chunk format."""
+    chunk = json.dumps([[event_id, event] for event_id, event in enumerate(events)])
+    return f"{len(chunk) + 1}\n{chunk}\n"
+
+
+def _lounge_status(client_name: str) -> list[Any]:
+    """Return a loungeStatus event whose screen runs the given YouTube client."""
+    device = {
+        "type": "LOUNGE_SCREEN",
+        "name": "TV",
+        "deviceInfo": json.dumps({"clientName": client_name}),
+    }
+    return ["loungeStatus", {"devices": json.dumps([device])}]
+
+
+async def test_failed_connect_drops_half_set_session() -> None:
+    """A connect reply that raises midway leaves no half-connected session.
+
+    Runs the real pyytlounge parsing: on a YouTube Kids profile the session
+    ids arrive before the status that raises, and the event id is only set
+    after the whole reply. Without the reset, connected() stayed True with
+    no event id, and every later request failed before it was sent.
+    """
+    api = _LoungeApi(
+        MagicMock(), "Home Assistant", EventListener(), logging.getLogger(__name__)
+    )
+    api.auth.screen_id = SCREEN_ID
+    api.auth.lounge_id_token = "token"  # noqa: S105 (a fake token)
+    reply = MagicMock(status=200)
+    reply.text = AsyncMock(
+        return_value=_bind_reply(
+            ["c", "SID", "", 8], ["S", "GSESSION"], _lounge_status("TVHTML5_FOR_KIDS")
+        )
+    )
+    api.session = MagicMock()
+    api.session.post.return_value.__aenter__.return_value = reply
+
+    with pytest.raises(NotSupportedException):
+        await api.connect()
+    assert not api.connected()
+
+    # The next retry connects from scratch and gets a usable event id.
+    reply.text.return_value = _bind_reply(
+        ["c", "SID", "", 8], ["S", "GSESSION"], _lounge_status("TVHTML5")
+    )
+    assert await api.connect()
+    assert api._last_event_id == 2
 
 
 def _player_unavailable(hass: HomeAssistant) -> bool:
