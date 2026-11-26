@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import html
 import re
+import socket
 from urllib.parse import urljoin, urlparse
 
 import aiohttp
@@ -13,7 +14,7 @@ from homeassistant.components import ssdp
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
-from .const import DIAL_ST, DIAL_TIMEOUT
+from .const import DIAL_ST, DIAL_TIMEOUT, LOGGER
 
 # Where common DIAL servers publish their device description, tried when the
 # TV hasn't been seen by SSDP (e.g. it's on another subnet). The description
@@ -65,9 +66,12 @@ def _tag(xml: str, tag: str) -> str | None:
 
 
 async def _get(session: aiohttp.ClientSession, url: str) -> aiohttp.ClientResponse:
+    # DIAL has no redirects; following one could lead anywhere on the network.
     try:
         response = await session.get(
-            url, timeout=aiohttp.ClientTimeout(total=DIAL_TIMEOUT)
+            url,
+            allow_redirects=False,
+            timeout=aiohttp.ClientTimeout(total=DIAL_TIMEOUT),
         )
         await response.read()
     except (aiohttp.ClientError, TimeoutError) as err:
@@ -102,6 +106,7 @@ async def async_launch_app(
             app_url,
             data=data,
             headers={"Origin": ORIGIN},
+            allow_redirects=False,
             timeout=aiohttp.ClientTimeout(total=DIAL_TIMEOUT),
         )
         await response.read()
@@ -119,6 +124,7 @@ async def async_stop_app(hass: HomeAssistant, run_url: str) -> None:
         response = await session.delete(
             run_url,
             headers={"Origin": ORIGIN},
+            allow_redirects=False,
             timeout=aiohttp.ClientTimeout(total=DIAL_TIMEOUT),
         )
         await response.read()
@@ -139,7 +145,15 @@ async def async_get_run_url(hass: HomeAssistant, app_url: str) -> str | None:
     match = re.search(r'<link[^>]*rel="run"[^>]*href="([^"]+)"', await response.text())
     if not match:
         return None
-    return urljoin(f"{app_url}/", match.group(1))
+    run_url = urljoin(f"{app_url}/", match.group(1))
+    if not await _async_same_host(hass, app_url, run_url):
+        LOGGER.warning(
+            "Not stopping YouTube: the TV at %s gave a stop link on another host, %s",
+            app_url,
+            run_url,
+        )
+        return None
+    return run_url
 
 
 async def _async_screen_from_app_url(
@@ -168,6 +182,14 @@ async def async_get_screen_from_location(
 
     description = await response.text()
 
+    if not await _async_same_host(hass, location, application_url):
+        LOGGER.warning(
+            "Ignoring the DIAL server at %s: its Application-URL, %s, is on "
+            "another host",
+            location,
+            application_url,
+        )
+        raise DialNoScreenError(f"{location} points to another host")
     if not application_url.endswith("/"):
         application_url += "/"
     screen = await _async_screen_from_app_url(session, f"{application_url}YouTube")
@@ -211,3 +233,33 @@ async def async_get_screen_from_host(hass: HomeAssistant, host: str) -> DialScre
 
 def _host_of(url: str) -> str | None:
     return urlparse(url).hostname
+
+
+async def _async_same_host(hass: HomeAssistant, url: str, other: str) -> bool:
+    """Return True if both HTTP URLs point to the same machine.
+
+    The ports may differ: a TV can serve its description and its apps on
+    different ports. A TV added by name reports its apps by IP address, so
+    names that differ are resolved and match if they share an address.
+    """
+    parsed = [urlparse(url), urlparse(other)]
+    if any(part.scheme not in ("http", "https") for part in parsed):
+        return False
+    host, other_host = (part.hostname for part in parsed)
+    if not host or not other_host:
+        return False
+    if host == other_host:
+        return True
+    try:
+        addresses = [
+            {
+                info[4][0]
+                for info in await hass.loop.getaddrinfo(
+                    name, None, type=socket.SOCK_STREAM
+                )
+            }
+            for name in (host, other_host)
+        ]
+    except OSError, UnicodeError:
+        return False
+    return not addresses[0].isdisjoint(addresses[1])

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import re
+import socket
+from typing import Any
 from unittest.mock import patch
 
 import pytest
@@ -74,6 +76,62 @@ async def test_screen_from_location(
     assert screen.udn == UDN
     assert screen.manufacturer == "Samsung"
     assert screen.model == "TQ75QN900FTXXC"
+
+
+def _resolve(names: dict[str, str]) -> Any:
+    """Return a getaddrinfo stand-in resolving the given names."""
+
+    async def getaddrinfo(host: str, *_args: Any, **_kwargs: Any) -> list[Any]:
+        if host not in names:
+            raise socket.gaierror(socket.EAI_NONAME, "Name or service not known")
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", (names[host], 0))]
+
+    return getaddrinfo
+
+
+@pytest.mark.parametrize(
+    "application_url",
+    [
+        "http://192.0.2.99:8080/ws/app/",
+        "http://router.lan/ws/app/",
+        "file:///ws/app/",
+    ],
+)
+async def test_location_app_url_on_another_host(
+    hass: HomeAssistant,
+    aioclient_mock: AiohttpClientMocker,
+    caplog: pytest.LogCaptureFixture,
+    application_url: str,
+) -> None:
+    """An Application-URL on another host is not followed."""
+    aioclient_mock.get(
+        LOCATION, text=DESCRIPTION, headers={"Application-URL": application_url}
+    )
+    with (
+        patch.object(
+            hass.loop, "getaddrinfo", _resolve({HOST: HOST, "router.lan": "192.0.2.1"})
+        ),
+        pytest.raises(DialNoScreenError),
+    ):
+        await async_get_screen_from_location(hass, LOCATION)
+    assert [call[1].host for call in aioclient_mock.mock_calls] == [HOST]
+    assert "is on another host" in caplog.text
+
+
+async def test_location_by_name_reports_app_by_address(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
+) -> None:
+    """A TV reached by name may report its apps by IP address."""
+    location = "http://tv.lan:7678/nservice/"
+    aioclient_mock.get(
+        location,
+        text=DESCRIPTION,
+        headers={"Application-URL": f"http://{HOST}:8080/ws/app/"},
+    )
+    aioclient_mock.get(APP_URL, text=APP_INFO)
+    with patch.object(hass.loop, "getaddrinfo", _resolve({"tv.lan": HOST, HOST: HOST})):
+        screen = await async_get_screen_from_location(hass, location)
+    assert screen.app_url == APP_URL
 
 
 async def test_location_not_dial(
@@ -280,3 +338,37 @@ async def test_get_run_url(
     aioclient_mock.clear_requests()
     aioclient_mock.get(APP_URL, text=APP_INFO_NO_SCREEN)
     assert await async_get_run_url(hass, APP_URL) is None
+
+
+async def test_run_url_on_another_host(
+    hass: HomeAssistant,
+    aioclient_mock: AiohttpClientMocker,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A stop link on another host is not used."""
+    aioclient_mock.get(
+        APP_URL, text=APP_INFO.replace('href="run"', 'href="http://192.0.2.1/run"')
+    )
+    with patch.object(hass.loop, "getaddrinfo", _resolve({HOST: HOST})):
+        assert await async_get_run_url(hass, APP_URL) is None
+    assert "stop link on another host" in caplog.text
+
+
+@pytest.mark.parametrize("method", ["get", "post", "delete"])
+async def test_dial_requests_do_not_follow_redirects(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker, method: str
+) -> None:
+    """Every DIAL request is sent with redirects off."""
+    with patch.object(
+        aioclient_mock, "match_request", wraps=aioclient_mock.match_request
+    ) as match_request:
+        getattr(aioclient_mock, method)(APP_URL, status=302)
+        if method == "get":
+            assert await async_get_app_state(hass, APP_URL) is None
+        elif method == "post":
+            with pytest.raises(DialError):
+                await async_launch_app(hass, APP_URL)
+        else:
+            with pytest.raises(DialError):
+                await async_stop_app(hass, APP_URL)
+    assert match_request.call_args.kwargs["allow_redirects"] is False
